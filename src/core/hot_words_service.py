@@ -230,15 +230,66 @@ class HotWordsService:
         """
         # 检查API密钥
         if not self.api.check_api_key():
+            # 检查.env文件是否存在
+            env_path = '.env'
+            if not os.path.exists(env_path):
+                return None, "缺少.env文件，请在项目根目录创建.env文件并配置DASHSCOPE_API_KEY"
+            
+            # 检查.env文件内容
+            try:
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    env_content = f.read()
+                    if "DASHSCOPE_API_KEY" not in env_content:
+                        return None, "API密钥未配置，请在.env文件中添加DASHSCOPE_API_KEY=sk-您的密钥"
+                    if "DASHSCOPE_API_KEY=" in env_content and "sk-" not in env_content:
+                        return None, "API密钥格式不正确，应以'sk-'开头，请检查.env文件"
+            except Exception as e:
+                logger.error(f"读取.env文件出错: {str(e)}")
+                return None, "读取.env文件出错，请确保文件存在且有正确权限"
+            
             return None, "API密钥验证失败，请检查.env文件中的DASHSCOPE_API_KEY设置"
         
         # 获取所有热词表
-        vocabularies = self.api.list_all_vocabularies()
-        
-        if not vocabularies:
-            return None, "未在阿里云上找到任何热词表"
+        try:
+            vocabularies = self.api.list_all_vocabularies()
             
-        return vocabularies, None
+            if not vocabularies:
+                return None, "未在阿里云上找到任何热词表"
+                
+            return vocabularies, None
+        except Exception as e:
+            logger.error(f"获取云端热词表失败: {str(e)}")
+            return None, f"获取云端热词表失败: {str(e)}"
+    
+    def query_vocabulary(self, vocabulary_id):
+        """
+        查询云端热词表详情
+        
+        参数:
+            vocabulary_id: 热词表ID
+            
+        返回:
+            (success, vocab_details): 是否成功及热词表详情数据
+        """
+        # 检查API密钥
+        if not self.api.check_api_key():
+            return False, None
+            
+        try:
+            # 调用API查询热词表详情
+            vocab_details = self.api.query_vocabulary(vocabulary_id)
+            
+            if vocab_details:
+                logger.info(f"成功获取热词表详情，ID: {vocabulary_id}")
+                return True, vocab_details
+            else:
+                logger.error(f"无法获取热词表详情，ID: {vocabulary_id}")
+                return False, None
+                
+        except Exception as e:
+            error_msg = f"查询热词表详情时出错: {str(e)}"
+            logger.error(error_msg)
+            return False, None
         
     def delete_cloud_vocabulary(self, vocabulary_id):
         """
@@ -280,7 +331,7 @@ class HotWordsService:
             logger.error(error_msg)
             return False, error_msg
             
-    def create_cloud_vocabulary(self, vocabulary, prefix=None, name=None):
+    def create_cloud_vocabulary(self, vocabulary, prefix=None, name=None, target_model=None):
         """
         创建云端热词表
         
@@ -288,13 +339,15 @@ class HotWordsService:
             vocabulary: 热词列表或热词表名称
             prefix: 自定义前缀（可选），不超过10个字符，仅支持小写字母和数字
             name: 热词表名称（可选）
+            target_model: 目标模型，例如 "paraformer-v2", "paraformer-realtime-v2"
             
         返回:
             (success, vocabulary_id, message): 成功状态、热词表ID和消息
         """
-        # 默认目标模型
-        target_model = 'paraformer-v2'
-        logger.info(f"开始创建云端热词表，目标模型: {target_model}")
+        # 默认目标模型设为最稳定的paraformer-v2
+        if not target_model:
+            target_model = 'paraformer-v2'
+        logger.info(f"开始创建云端热词表，目标模型: {target_model}, 名称: {name}")
         
         # 处理参数顺序混淆的情况
         # 如果vocabulary是字符串且name是列表，则交换参数
@@ -372,6 +425,10 @@ class HotWordsService:
         formatted_count = len(formatted_vocabulary)
         logger.info(f"热词处理：原始数量 {original_count}，有效数量 {formatted_count}")
         
+        # 输出热词详情便于调试
+        if formatted_count > 0:
+            logger.info(f"热词详情(前5个): {json.dumps(formatted_vocabulary[:5], ensure_ascii=False)}")
+        
         if not formatted_vocabulary:
             error_msg = "没有有效的热词，请确保输入至少一个非空的热词"
             logger.error(error_msg)
@@ -380,38 +437,19 @@ class HotWordsService:
         # 检查API密钥
         if not self.api.check_api_key():
             error_msg = "API密钥验证失败，请检查环境变量DASHSCOPE_API_KEY设置"
+            logger.error(error_msg)
             return False, None, error_msg
         
         # 调用API创建热词表
         try:
-            # 对于特别简单的情况直接使用原始API
-            if len(formatted_vocabulary) <= 5:
-                logger.info("使用简化API调用方式（少量热词）")
-                # 使用最简单直接的方式
-                simple_vocabulary = []
-                for item in formatted_vocabulary:
-                    if isinstance(item, dict) and 'text' in item:
-                        # 保留原始权重和语言设置，但确保格式简单
-                        simple_vocabulary.append({
-                            "text": item['text'],
-                            "weight": item.get('weight', 4),
-                            "lang": item.get('lang', 'zh')
-                        })
-                
-                vocab_id = self.api.create_vocabulary(
-                    vocabulary=simple_vocabulary,
-                    prefix=prefix,
-                    target_model=target_model,
-                    name=name
-                )
-            else:
-                # 正常方式
-                vocab_id = self.api.create_vocabulary(
-                    vocabulary=formatted_vocabulary,
-                    prefix=prefix,
-                    target_model=target_model,
-                    name=name
-                )
+            logger.info(f"准备创建热词表: 名称={name}, 前缀={prefix}, 模型={target_model}, 热词数量={len(formatted_vocabulary)}")
+            
+            # 创建热词表
+            vocab_id = self.api.create_vocabulary(
+                vocabulary=formatted_vocabulary,
+                prefix=prefix,
+                target_model=target_model
+            )
             
             if vocab_id:
                 logger.info(f"云端热词表创建成功，ID: {vocab_id}")
