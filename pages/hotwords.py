@@ -257,13 +257,8 @@ def show():
             # 显示自动生成的热词表名称
             st.write(f"热词表名称: **{default_name}**")
             
-            # 选择目标模型
-            target_model = st.selectbox(
-                "选择目标语音识别模型", 
-                options=["paraformer-realtime-v2", "paraformer-v2", "paraformer-realtime-8k-v2", "paraformer-8k-v2"],
-                index=0,
-                help="基于阿里云文档: paraformer-realtime-v2适用于实时语音识别, paraformer-v2适用于录音文件识别"
-            )
+            # 隐藏模型选择，直接使用固定模型
+            target_model = "paraformer-v2"
             
             # 过滤有效的热词条目 (非空文本)
             valid_entries = [entry for entry in st.session_state.hotword_entries if entry["text"].strip()]
