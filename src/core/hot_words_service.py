@@ -339,12 +339,12 @@ class HotWordsService:
             vocabulary: 热词列表或热词表名称
             prefix: 自定义前缀（可选），不超过10个字符，仅支持小写字母和数字
             name: 热词表名称（可选）
-            target_model: 目标模型，例如 "paraformer-v2", "paraformer-realtime-v2"
+            target_model: 目标模型，例如 "paraformer-v2"
             
         返回:
             (success, vocabulary_id, message): 成功状态、热词表ID和消息
         """
-        # 默认目标模型设为最稳定的paraformer-v2
+        # 默认目标模型
         if not target_model:
             target_model = 'paraformer-v2'
         logger.info(f"开始创建云端热词表，目标模型: {target_model}, 名称: {name}")
