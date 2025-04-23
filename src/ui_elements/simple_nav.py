@@ -19,11 +19,19 @@ def inject_sidebar_style():
         display: none !important;
     }
     
-    /* 侧边栏样式 */
+    /* 侧边栏宽度最小化 */
     section[data-testid="stSidebar"] {
+        width: 200px !important;
+        min-width: 200px !important;
+        max-width: 200px !important;
         background-color: #f8f9fa;
         border-right: 1px solid #eee;
-        padding: 1rem 1rem 0 1rem !important;
+        padding: 1rem 0.5rem 0 0.5rem !important;
+    }
+    
+    /* 侧边栏内部容器宽度设置 */
+    section[data-testid="stSidebar"] > div {
+        width: 100% !important;
     }
     
     /* 导航标题样式 */
@@ -55,8 +63,8 @@ def inject_sidebar_style():
         height: 40px !important;
         border-radius: 4px !important;
         transition: all 0.2s ease;
-        padding: 0.5rem 1rem !important;
-        font-size: 0.95rem !important;
+        padding: 0.5rem 0.5rem !important;
+        font-size: 0.9rem !important;
         margin: 0 !important;
         box-sizing: border-box !important;
     }
@@ -69,12 +77,12 @@ def inject_sidebar_style():
         text-align: center;
         height: 40px;
         line-height: 40px;
-        padding: 0 1rem;
+        padding: 0 0.5rem;
         border-radius: 4px;
         width: 100%;
         display: block;
         cursor: default;
-        font-size: 0.95rem;
+        font-size: 0.9rem;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         margin: 0 0 10px 0;
         box-sizing: border-box;
