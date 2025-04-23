@@ -37,11 +37,11 @@ def show():
     """渲染热词管理页面"""
     # 添加导航栏, 并标记当前页面
     create_sidebar_navigation("热词管理")
-
+    
     # 页面标题
     st.title("热词管理")
     st.markdown("---")
-    
+        
     # 确保热词目录存在
     os.makedirs(HOTWORDS_DIR, exist_ok=True)
     
