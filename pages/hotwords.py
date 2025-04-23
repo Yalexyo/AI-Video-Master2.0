@@ -172,15 +172,40 @@ def show():
         with col2:
             add_empty_btn = st.button("➕ 添加行")
         
+        # 添加热词说明
+        with st.expander("ℹ️ 热词设置说明", expanded=False):
+            st.markdown("""
+            ### 热词配置指南
+            
+            - **热词文本**：每个词语最长10个汉字或英文单词
+            - **权重**：取值范围为1-5的整数，默认值为4。较大权重可能会引起负面效果，导致其他词语识别不准确
+            - **语言**：指定热词的语言
+                - `zh`：中文
+                - `en`：英文
+            
+            > 根据[阿里云文档](https://help.aliyun.com/zh/model-studio/custom-hot-words)，每个热词列表最多添加500个词
+            """)
+        
         # 处理添加新行
         if add_empty_btn:
             st.session_state.hotword_entries.append({"text": "", "weight": 4, "lang": "zh"})
             st.rerun()
         
+        # 添加表头
+        header_cols = st.columns([5, 2, 2, 1])
+        with header_cols[0]:
+            st.write("**热词文本**")
+        with header_cols[1]:
+            st.write("**权重(1-5)**")
+        with header_cols[2]:
+            st.write("**语言**")
+        with header_cols[3]:
+            st.write("**操作**")
+        
         # 使用带有侧边操作按钮的表格式布局
         for i, entry in enumerate(st.session_state.hotword_entries):
-            # 每行用三列: 文本输入、权重选择器、删除按钮
-            cols = st.columns([5, 2, 1])
+            # 每行用四列: 文本输入、权重选择器、语言选择器、删除按钮
+            cols = st.columns([5, 2, 2, 1])
             
             with cols[0]:
                 # 热词文本输入
@@ -193,16 +218,27 @@ def show():
                 )
             
             with cols[1]:
-                # 权重选择器 (1-10)
+                # 权重选择器 (1-5)，根据官方文档，取值范围为[1, 5]之间的整数
                 st.session_state.hotword_entries[i]["weight"] = st.select_slider(
                     "权重",
-                    options=list(range(1, 11)),
-                    value=entry["weight"],
+                    options=list(range(1, 6)),  # 1-5
+                    value=min(entry["weight"], 5) if entry["weight"] else 4,  # 确保值在有效范围内
                     key=f"weight_{i}",
                     label_visibility="collapsed"
                 )
             
             with cols[2]:
+                # 语言选择器
+                st.session_state.hotword_entries[i]["lang"] = st.selectbox(
+                    "语言",
+                    options=["zh", "en"],
+                    index=0 if entry.get("lang", "zh") == "zh" else 1,
+                    key=f"lang_{i}",
+                    label_visibility="collapsed",
+                    help="zh:中文, en:英文"
+                )
+            
+            with cols[3]:
                 # 删除按钮 - 移到表单外部
                 if st.button("✕", key=f"delete_{i}"):
                     st.session_state.hotword_entries.pop(i)
