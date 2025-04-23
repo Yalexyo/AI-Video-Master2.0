@@ -1,11 +1,11 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # 环境检查与启动指南
 
-> 本项目 **仅使用 `.venv`** 作为 Python 虚拟环境，并且**必须使用 Python 3.10.13** 版本。
+> 本项目 **仅使用 `.venv`** 作为 Python 虚拟环境，并且**必须使用 Python 3.10.16** 版本。
 > 以下流程确保 _任何人_ 在首次克隆或重新拉取代码后，都能一键完成环境准备并启动应用。
 
 ---

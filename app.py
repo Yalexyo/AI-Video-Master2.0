@@ -58,18 +58,18 @@ def main():
         
         # 强制注入隐藏顶栏样式
         st.markdown("""
-        <style>
+            <style>
         /* 隐藏streamlit自带导航和其他UI元素 */
-        [data-testid="stSidebarNav"], 
-        header[data-testid="stHeader"],
+            [data-testid="stSidebarNav"],
+            header[data-testid="stHeader"],
         div[data-testid="stToolbar"],
         div[data-testid="stDecoration"],
         div[data-testid="stStatusWidget"],
         #MainMenu,
         footer {
-            display: none !important;
-        }
-        </style>
+                display: none !important;
+            }
+            </style>
         """, unsafe_allow_html=True)
         
         # 初始化session_state
