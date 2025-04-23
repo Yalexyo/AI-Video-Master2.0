@@ -1,0 +1,146 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 环境检查与启动指南
+
+> 本项目 **仅使用 `.venv`** 作为 Python 虚拟环境，并且**必须使用 Python 3.10.13** 版本。
+> 以下流程确保 _任何人_ 在首次克隆或重新拉取代码后，都能一键完成环境准备并启动应用。
+
+---
+
+## 1. 快速命令总览
+
+| 场景 | 一行命令 |
+| --- | --- |
+| 全新环境 / 第一次运行 | `bash scripts/run.sh` *(推荐：完整自动化脚本，下节示例)* |
+| 手动步骤 | `make setup && make run` |
+| 仅更新依赖 | `make install` |
+| 仅启动应用（确认依赖齐全） | `make run` |
+
+> Makefile 目标详见 [Makefile](mdc:Makefile)。
+
+---
+
+## 2. 核心步骤详解
+
+### 2.1 检查 / 创建虚拟环境
+```bash
+# 若不存在 .venv，则创建
+# 必须使用Python 3.10.13版本
+test -d .venv || python3.10 -m venv .venv
+```
+
+### 2.2 激活虚拟环境
+```bash
+source .venv/bin/activate
+# 验证Python版本
+python --version  # 应显示 Python 3.10.x
+```
+如果终端仍显示 `(base)`，请先执行：
+```bash
+conda deactivate          # 退出 conda base
+conda config --set auto_activate_base false  # 永久关闭自动激活（可选）
+```
+
+### 2.3 依赖检查与安装
+```bash
+python -c "import streamlit" 2>/dev/null \
+  || pip install -r requirements.txt -i https://pypi.org/simple
+```
+依赖列表位于 [requirements.txt](mdc:requirements.txt)。
+
+### 2.4 启动应用
+```bash
+streamlit run app.py
+```
+
+---
+
+## 3. 一键脚本示例 `scripts/run.sh`
+```bash
+#!/usr/bin/env bash
+set -e
+
+# Step 1: 检查Python版本
+if command -v python3.10 &> /dev/null; then
+  PYTHON_CMD=python3.10
+else
+  echo "[错误] 未找到Python 3.10，请安装Python 3.10.13后再试"
+  exit 1
+fi
+
+# Step 2: venv
+if [ ! -d ".venv" ]; then
+  echo "[INFO] 创建虚拟环境 .venv (使用Python 3.10)"
+  $PYTHON_CMD -m venv .venv
+fi
+
+# Step 3: activate
+source .venv/bin/activate
+
+# Step 4: 验证Python版本
+PY_VERSION=$(python --version)
+if [[ $PY_VERSION != *"3.10"* ]]; then
+  echo "[错误] 需要Python 3.10.x，当前版本: $PY_VERSION"
+  echo "请运行: rm -rf .venv && python3.10 -m venv .venv"
+  exit 1
+fi
+
+# Step 5: deps
+python - <<'PY'
+try:
+    import streamlit  # noqa
+    print('[INFO] 依赖已满足')
+except ImportError:
+    import os, subprocess, sys  # noqa
+    print('[INFO] 安装依赖...')
+    cmd = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt', '-i', 'https://pypi.org/simple']
+    subprocess.check_call(cmd)
+PY
+
+# Step 6: run
+exec streamlit run app.py
+```
+> 建议将该脚本加入版本库 (`scripts/run.sh`) 并在 `README.md` 中引用。
+
+---
+
+## 4. 常见问题排查
+
+| 症状 | 解决方案 |
+| ---- | -------- |
+| `Python 3.10 not found` | 安装Python 3.10.13: `brew install python@3.10` (Mac) 或从官网下载 |
+| `(base)` 持续存在 | `conda deactivate` ，或 `conda config --set auto_activate_base false` 禁用自动激活 |
+| `streamlit: command not found` | 先激活 `.venv`，再执行 `pip install -r requirements.txt` |
+| 代理导致安装失败 | 追加 `--proxy=''` 或切换源 `-i https://pypi.org/simple` |
+| 权限不足 | `chmod -R 755 .venv` 或以管理员权限重建虚拟环境 |
+| 虚拟环境被嵌套激活 (显示多个`(.venv)`) | 多次运行 `deactivate` 直到所有环境都退出，然后重新激活 |
+
+---
+
+## 5. CI / CD 建议
+
+在自动化流水线中，使用下列步骤：
+```yaml
+- name: Set up Python
+  uses: actions/setup-python@v4
+  with:
+    python-version: '3.10.13'  # 明确指定版本
+
+- name: Cache venv
+  uses: actions/cache@v3
+  with:
+    path: .venv
+    key: venv-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+- name: Install & Test
+  run: |
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt -i https://pypi.org/simple
+    make test
+```
+
+> **至此，任何开发者只需 `bash scripts/run.sh` 即可本地跑起项目。运行时，要确保系统中已安装Python 3.10.13。**

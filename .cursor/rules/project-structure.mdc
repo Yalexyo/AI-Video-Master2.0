@@ -1,0 +1,44 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# AI 视频大师项目结构指南
+
+该项目基于 Streamlit，遵循 [streamlit-rule](mdc:streamlit-rule.mdc) 所述的目录与分层原则。以下内容帮助快速定位主要功能模块。
+
+## 顶层入口
+- [app.py](mdc:app.py)：应用启动入口，负责全局设置、日志、环境变量加载及侧边栏导航。
+
+## 页面层（UI）
+- 目录：`pages/`
+  - [video_analysis.py](mdc:pages/video_analysis.py)：视频分析主页面。
+  - [dimensions.py](mdc:pages/dimensions.py)：分析维度管理页面。
+  - [hotwords.py](mdc:pages/hotwords.py)：热词管理页面。
+
+## 核心业务逻辑
+- 目录：`src/core/`
+  - [hot_words_service.py](mdc:src/core/hot_words_service.py)：封装热词相关的业务操作。
+  - [logic.py](mdc:src/core/logic.py)：场景相关综合逻辑处理。
+  - [model.py](mdc:src/core/model.py)：数据模型与数据结构定义。
+  - [hot_words_api.py](mdc:src/core/hot_words_api.py)：热词对外 API 封装。
+
+## 数据访问层
+- 目录：`src/data_access/`
+  - [data_loader.py](mdc:src/data_access/data_loader.py)：数据加载与持久化。
+  - [data_processor.py](mdc:src/data_access/data_processor.py)：数据预处理（占位）。
+
+## UI 组件
+- 目录：`src/ui_elements/`
+  - [dimension_editor.py](mdc:src/ui_elements/dimension_editor.py)：维度编辑器复用组件。
+
+## 配置与工具
+- 配置：`src/config/[settings.py](mdc:src/config/settings.py)`
+- 通用工具：`utils/`（通用方法与脚本，按需扩展）
+
+## 其他
+- 数据目录：`data/`，用于存放原始、处理后及缓存数据。
+- 日志目录：`logs/`，按日期输出运行日志文件。
+- 测试目录：`tests/`，后续补充单元测试与集成测试。
+
+> 阅读本规则后，可通过文件引用快速跳转到相应模块，提升导航效率。

@@ -1,0 +1,21 @@
+# 禁止访问about、app和home页面，重定向到dimensions页面
+RedirectMatch 301 ^/about$ /dimensions
+RedirectMatch 301 ^/about/$ /dimensions
+RedirectMatch 301 ^/app$ /dimensions
+RedirectMatch 301 ^/app/$ /dimensions
+RedirectMatch 301 ^/home$ /dimensions
+RedirectMatch 301 ^/home/$ /dimensions
+RedirectMatch 301 ^/$ /dimensions
+
+# 禁止直接访问Python文件
+<FilesMatch "\.py$">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+
+# 保护特定页面
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^pages/about\.py$ - [F,L]
+  RewriteRule ^pages/dashboard\.py$ - [F,L]
+</IfModule> 
