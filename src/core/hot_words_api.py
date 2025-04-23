@@ -9,6 +9,9 @@ import re
 # 配置日志
 logger = logging.getLogger(__name__)
 
+# 全局API实例
+_api_instance = None
+
 class HotWordsAPI:
     """
     热词API交互管理类
@@ -210,7 +213,11 @@ class HotWordsAPI:
     def check_api_key(self):
         """检查API密钥是否可用"""
         if not self.api_key:
-            logger.error("未设置DASHSCOPE_API_KEY环境变量")
+            logger.error("未设置DASHSCOPE_API_KEY环境变量，请在.env文件中配置")
+            return False
+        
+        if len(self.api_key.strip()) < 10 or not self.api_key.startswith("sk-"):
+            logger.error(f"API密钥格式不正确，应以'sk-'开头且长度足够: {self.api_key[:4]}...")
             return False
         
         # 测试简单的API调用，验证API密钥是否有效
@@ -229,15 +236,32 @@ class HotWordsAPI:
                 }
             }
             
-            response = requests.post(self.base_url, headers=headers, json=data)
+            # 添加超时，避免长时间等待
+            response = requests.post(self.base_url, headers=headers, json=data, timeout=10)
             
             # 检查响应
             if response.status_code == 200:
                 logger.info("API密钥有效，成功连接到阿里云")
                 return True
-            else:
-                logger.error(f"API密钥无效，状态码: {response.status_code}, 响应: {response.text}")
+            elif response.status_code == 401:
+                logger.error(f"API密钥无效，认证失败 (401)，请检查密钥是否正确: {self.api_key[:4]}...")
                 return False
+            elif response.status_code == 429:
+                logger.error(f"API调用频率超限 (429)，请稍后再试")
+                return False
+            else:
+                try:
+                    error_detail = response.json()
+                    logger.error(f"API调用失败，状态码: {response.status_code}, 错误详情: {error_detail}")
+                except:
+                    logger.error(f"API调用失败，状态码: {response.status_code}, 响应: {response.text[:200]}")
+                return False
+        except requests.exceptions.Timeout:
+            logger.error("API连接超时，请检查网络连接或稍后再试")
+            return False
+        except requests.exceptions.ConnectionError:
+            logger.error("无法连接到API服务器，请检查网络连接")
+            return False
         except Exception as e:
             logger.error(f"API连接测试出错: {str(e)}")
             return False
@@ -255,6 +279,14 @@ class HotWordsAPI:
         返回:
             创建成功返回热词表ID，失败返回None
         """
+        # 先尝试使用直接创建方法
+        vocab_id = self.direct_create_vocabulary(vocabulary, prefix, target_model, name)
+        if vocab_id:
+            return vocab_id
+            
+        # 如果直接创建失败，回退到原始方法
+        logger.warning("直接创建热词表失败，尝试使用原始方法")
+        
         # 使用默认值
         prefix = prefix or self.default_prefix
         target_model = target_model or self.default_model
@@ -340,6 +372,10 @@ class HotWordsAPI:
             if "weight" in item and not isinstance(item["weight"], int):
                 item["weight"] = int(item["weight"])
         
+        # 记录完整请求，方便调试
+        debug_data = json.loads(json.dumps(data))
+        logger.info(f"创建热词表请求: {json.dumps(debug_data, ensure_ascii=False)}")
+        
         # 发起请求，含基本重试
         success, result, error_msg = self._make_api_request(
             data=data, 
@@ -352,6 +388,9 @@ class HotWordsAPI:
             logger.error(f"创建热词表失败: {error_msg}")
             return None
         
+        # 输出完整响应调试
+        logger.info(f"创建热词表响应: {json.dumps(result, ensure_ascii=False)}")
+        
         # 检查是否直接返回vocabulary_id
         if 'output' in result and 'vocabulary_id' in result['output']:
             vocab_id = result['output']['vocabulary_id']
@@ -359,6 +398,139 @@ class HotWordsAPI:
             return vocab_id
         else:
             logger.error(f"响应格式异常，未找到vocabulary_id: {json.dumps(result, ensure_ascii=False)}")
+            return None
+    
+    def direct_create_vocabulary(self, vocabulary, prefix=None, target_model=None, name=None):
+        """
+        使用直接API调用创建热词表，参考测试脚本的实现方式
+        
+        参数:
+            vocabulary: 热词列表内容
+            prefix: 热词表前缀
+            target_model: 目标模型
+            name: 热词表名称
+            
+        返回:
+            创建成功返回热词表ID，失败返回None
+        """
+        if not self.check_api_key():
+            logger.error("API密钥验证失败")
+            return None
+            
+        # 使用默认值
+        prefix = prefix or self.default_prefix
+        target_model = target_model or self.default_model
+        
+        # 确保前缀合法
+        if not re.match(r'^[a-z0-9]+$', prefix):
+            logger.warning(f"前缀不合法: {prefix}，已替换为默认前缀")
+            prefix = self.default_prefix
+            
+        if len(prefix) > 10:
+            prefix = prefix[:10]
+            logger.info(f"前缀超长，已截断为: {prefix}")
+            
+        # 确保vocabulary是有效列表
+        valid_vocabulary = []
+        
+        # 处理列表
+        if isinstance(vocabulary, list):
+            for item in vocabulary:
+                if isinstance(item, dict) and "text" in item and item["text"].strip():
+                    # 确保weight是1-5之间的整数
+                    weight = item.get("weight", 4)
+                    if isinstance(weight, (int, float)):
+                        weight = max(1, min(5, int(weight)))  # 限制在1-5范围内
+                    else:
+                        weight = 4  # 默认权重
+                        
+                    valid_item = {
+                        "text": item["text"].strip(),
+                        "weight": weight,
+                        "lang": item.get("lang", "zh")
+                    }
+                    valid_vocabulary.append(valid_item)
+                elif isinstance(item, str) and item.strip():
+                    valid_vocabulary.append({
+                        "text": item.strip(),
+                        "weight": 4,
+                        "lang": "zh"
+                    })
+        
+        # 如果没有有效热词，返回失败
+        if not valid_vocabulary:
+            logger.error("没有有效的热词")
+            return None
+            
+        # 取前50个词避免太多
+        if len(valid_vocabulary) > 50:
+            logger.warning(f"热词数量过多 ({len(valid_vocabulary)}个)，将只使用前50个")
+            valid_vocabulary = valid_vocabulary[:50]
+            
+        logger.info(f"准备创建热词表: 前缀={prefix}, 模型={target_model}, 热词数量={len(valid_vocabulary)}")
+        if len(valid_vocabulary) > 0:
+            logger.info(f"热词示例: {json.dumps(valid_vocabulary[:3], ensure_ascii=False)}")
+            
+        # 构建请求
+        payload = {
+            "model": "speech-biasing",
+            "input": {
+                "action": "create_vocabulary",
+                "target_model": target_model,
+                "prefix": prefix,
+                "vocabulary": valid_vocabulary
+            }
+        }
+        
+        # 添加名称如果有
+        if name:
+            payload["input"]["name"] = name
+            
+        # 发送请求
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            logger.info(f"发送热词表创建请求: {json.dumps(payload, ensure_ascii=False)}")
+            
+            response = requests.post(
+                self.base_url, 
+                headers=headers, 
+                json=payload,
+                timeout=30  # 30秒超时
+            )
+            
+            # 检查响应状态
+            if response.status_code != 200:
+                logger.error(f"创建热词表API请求失败: HTTP {response.status_code}")
+                try:
+                    error_detail = response.json()
+                    logger.error(f"错误详情: {json.dumps(error_detail, ensure_ascii=False)}")
+                except:
+                    logger.error(f"响应内容: {response.text[:200]}")
+                return None
+                
+            # 解析响应
+            try:
+                result = response.json()
+                logger.info(f"创建热词表API响应: {json.dumps(result, ensure_ascii=False)}")
+                
+                # 提取vocabulary_id
+                vocabulary_id = result.get("output", {}).get("vocabulary_id")
+                if vocabulary_id:
+                    logger.info(f"热词表创建成功，ID: {vocabulary_id}")
+                    return vocabulary_id
+                else:
+                    logger.error("响应中未找到vocabulary_id")
+                    return None
+            except json.JSONDecodeError:
+                logger.error(f"无法解析API响应为JSON: {response.text[:200]}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"创建热词表过程中出错: {str(e)}")
             return None
     
     def list_vocabularies(self, prefix=None, page_index=0, page_size=10):
@@ -587,12 +759,71 @@ class HotWordsAPI:
             logger.error(f"热词表删除响应格式错误: {result}")
             return False
 
-# 单例模式
-_api_instance = None
-
 def get_api():
     """获取API实例"""
     global _api_instance
     if _api_instance is None:
         _api_instance = HotWordsAPI()
-    return _api_instance 
+    return _api_instance
+
+def create_env_file(api_key=None):
+    """
+    创建或更新.env文件
+    
+    参数:
+        api_key: API密钥，如果为None则创建模板
+    
+    返回:
+        (success, message): 是否成功和消息
+    """
+    try:
+        # 检查是否有现有内容
+        env_content = ""
+        env_path = '.env'
+        if os.path.exists(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                env_content = f.read()
+        
+        # 如果没有提供API密钥，创建示例模板
+        if not api_key:
+            # 检查是否已有配置
+            if "DASHSCOPE_API_KEY" in env_content and "sk-" in env_content:
+                return True, "API密钥已配置，无需创建模板"
+            
+            # 创建示例模板
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write("""# 阿里云DashScope API配置
+# 请填入您的真实API密钥
+# 格式为: sk-xxxxxxxxxxxx
+DASHSCOPE_API_KEY=sk-填入您的实际密钥
+
+# 其他配置（可选）
+# DEBUG=True
+""")
+            return True, "已创建.env模板文件，请编辑填入实际API密钥"
+        
+        # 提供了API密钥，直接设置
+        if not api_key.startswith("sk-"):
+            return False, "API密钥格式不正确，应以'sk-'开头"
+        
+        # 更新现有内容或创建新文件
+        if "DASHSCOPE_API_KEY=" in env_content:
+            # 替换现有密钥
+            new_content = re.sub(
+                r'DASHSCOPE_API_KEY=.*', 
+                f'DASHSCOPE_API_KEY={api_key}',
+                env_content
+            )
+        else:
+            # 添加新密钥
+            new_content = env_content + f"\nDASHSCOPE_API_KEY={api_key}\n"
+        
+        # 写入文件
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        return True, "API密钥已成功保存到.env文件"
+    
+    except Exception as e:
+        logger.error(f"创建.env文件出错: {str(e)}")
+        return False, f"创建.env文件出错: {str(e)}" 
