@@ -331,6 +331,8 @@ def show():
         # 自动加载云端热词列表
         # 如果是首次加载页面或请求了刷新，则加载最新数据
         auto_refresh = False
+        error_msg = None  # 初始化error_msg变量
+        
         if "cloud_vocabularies" not in st.session_state or st.session_state.get("refresh_cloud", False):
             auto_refresh = True
             st.session_state.refresh_cloud = False
