@@ -260,9 +260,9 @@ def show():
             # 选择目标模型
             target_model = st.selectbox(
                 "选择目标语音识别模型", 
-                options=["paraformer-v2"],
+                options=["paraformer-realtime-v2", "paraformer-v2", "paraformer-realtime-8k-v2", "paraformer-8k-v2"],
                 index=0,
-                help="paraformer-v2是阿里云推荐的语音识别模型"
+                help="基于阿里云文档: paraformer-realtime-v2适用于实时语音识别, paraformer-v2适用于录音文件识别"
             )
             
             # 过滤有效的热词条目 (非空文本)
