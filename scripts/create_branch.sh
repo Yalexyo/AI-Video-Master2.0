@@ -16,7 +16,7 @@ if [ $# -lt 2 ]; then
     echo "类型选项:"
     echo "  1 或 debug - Bug修复分支 (debug/名称)"
     echo "  2 或 ui    - UI优化分支 (ui/名称)"
-    echo "  3 或 new   - 新功能分支 (new-features/名称)"
+    echo "  3 或 new   - 新功能分支 (feature/名称)"
     exit 1
 fi
 
@@ -36,7 +36,7 @@ case $TYPE in
         TYPE_DESC="UI优化"
         ;;
     3|new)
-        BRANCH_NAME="new-features/$NAME"
+        BRANCH_NAME="feature/$NAME"
         TYPE_DESC="新功能"
         ;;
     *)
@@ -44,7 +44,7 @@ case $TYPE in
         echo "类型选项:"
         echo "  1 或 debug - Bug修复分支 (debug/名称)"
         echo "  2 或 ui    - UI优化分支 (ui/名称)"
-        echo "  3 或 new   - 新功能分支 (new-features/名称)"
+        echo "  3 或 new   - 新功能分支 (feature/名称)"
         exit 1
         ;;
 esac

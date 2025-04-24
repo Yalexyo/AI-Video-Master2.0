@@ -1,0 +1,820 @@
+{
+  "type": "维度分析",
+  "timestamp": "2025-04-24 16:45:00",
+  "matches": [
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "母乳低聚糖HMO",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "母乳低聚糖HMO",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "母乳低聚糖HMO",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "A2奶源",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "A2奶源",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "A2奶源",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "乳铁蛋白",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "乳铁蛋白",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "乳铁蛋白",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "宝宝吸收",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "宝宝吸收",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "宝宝吸收",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "高效带娃",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "高效带娃",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "高效带娃",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "产后恢复",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "产后恢复",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品特性",
+      "dimension_level2": "产后恢复",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "户外喂养",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "户外喂养",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "户外喂养",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "母婴室",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "母婴室",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "母婴室",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "换奶期",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "换奶期",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "换奶期",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "亲子时光",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "亲子时光",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "使用场景",
+      "dimension_level2": "亲子时光",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "新手妈妈",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "新手妈妈",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "新手妈妈",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "孕晚期",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "孕晚期",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "孕晚期",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "换奶期",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "换奶期",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "换奶期",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "水奶",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "水奶",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "水奶",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "启赋水奶",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "启赋水奶",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "启赋水奶",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "配方",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "配方",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "配方",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "转奶方式",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "转奶方式",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "转奶方式",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "断奶",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "断奶",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "目标人群",
+      "dimension_level2": "断奶",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "品牌信任",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "品牌信任",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "品牌信任",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "质量保证",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "质量保证",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "质量保证",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "成分安全",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "成分安全",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "成分安全",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "使用方便",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "使用方便",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "使用方便",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "携带便捷",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "携带便捷",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "携带便捷",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "快速准备",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "快速准备",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "快速准备",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "朋友推荐",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "朋友推荐",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "朋友推荐",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "育儿社群",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "育儿社群",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "育儿社群",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "专家认可",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "专家认可",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "情感诉求",
+      "dimension_level2": "专家认可",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "口感接受度",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "口感接受度",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "口感接受度",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "消化适应",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "消化适应",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "消化适应",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "安睡效果",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "安睡效果",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "安睡效果",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "免疫力提升",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "免疫力提升",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "免疫力提升",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "发育健康",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "发育健康",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "发育健康",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "智力发展",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "智力发展",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "智力发展",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "使用感受",
+      "timestamp": "00:00:30",
+      "text": "用户体验是我们产品的核心竞争力",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "使用感受",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "使用感受",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "家长满意度",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "家长满意度",
+      "timestamp": "00:00:50",
+      "text": "我们的产品质量得到了用户的高度认可",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "家长满意度",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "宝宝喜爱度",
+      "timestamp": "00:00:40",
+      "text": "创新是推动品牌向前发展的关键",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "宝宝喜爱度",
+      "timestamp": "00:00:20",
+      "text": "我们需要提高用户的品牌认知度",
+      "score": 0.75
+    },
+    {
+      "dimension_level1": "产品效果",
+      "dimension_level2": "宝宝喜爱度",
+      "timestamp": "00:00:10",
+      "text": "品牌的影响力正在不断增长",
+      "score": 0.75
+    }
+  ],
+  "dimensions": {
+    "title": "启赋产品维度分析",
+    "level1": [
+      "产品特性",
+      "使用场景",
+      "目标人群",
+      "情感诉求",
+      "产品效果"
+    ],
+    "level2": {
+      "产品特性": [
+        "母乳低聚糖HMO",
+        "A2奶源",
+        "乳铁蛋白",
+        "宝宝吸收",
+        "高效带娃",
+        "产后恢复"
+      ],
+      "使用场景": [
+        "户外喂养",
+        "母婴室",
+        "换奶期",
+        "亲子时光"
+      ],
+      "目标人群": [
+        "新手妈妈",
+        "孕晚期",
+        "换奶期",
+        "水奶",
+        "启赋水奶",
+        "配方",
+        "转奶方式",
+        "断奶"
+      ],
+      "情感诉求": [
+        "品牌信任",
+        "质量保证",
+        "成分安全",
+        "使用方便",
+        "携带便捷",
+        "快速准备",
+        "朋友推荐",
+        "育儿社群",
+        "专家认可"
+      ],
+      "产品效果": [
+        "口感接受度",
+        "消化适应",
+        "安睡效果",
+        "免疫力提升",
+        "发育健康",
+        "智力发展",
+        "使用感受",
+        "家长满意度",
+        "宝宝喜爱度"
+      ]
+    }
+  }
+}
