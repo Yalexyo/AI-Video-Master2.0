@@ -264,118 +264,118 @@ def show():
     with upload_tab:
         st.header("上传视频")
         
-        # 创建两个列以并排显示不同的上传方式
-        col1, col2 = st.columns(2)
+        # 方式一：上传本地视频
+        st.subheader("方式一：上传本地视频")
+        uploaded_file = st.file_uploader("选择要分析的视频文件", type=["mp4", "mov", "avi", "mkv"], help="支持常见视频格式")
         
-        with col1:
-            st.subheader("方式一：上传本地视频")
-            uploaded_file = st.file_uploader("选择要分析的视频文件", type=["mp4", "mov", "avi", "mkv"], help="支持常见视频格式")
+        if uploaded_file:
+            # 显示上传的视频信息
+            st.video(uploaded_file)
+            st.info(f"文件名: {uploaded_file.name}, 大小: {uploaded_file.size} 字节")
             
-            if uploaded_file:
-                # 显示上传的视频信息
-                st.video(uploaded_file)
-                st.info(f"文件名: {uploaded_file.name}, 大小: {uploaded_file.size} 字节")
-                
-                # 将上传的视频保存到临时目录
-                temp_video_path = os.path.join("data", "temp", uploaded_file.name)
-                with open(temp_video_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                st.success(f"视频已保存到: {temp_video_path}")
-                
-                # 保存视频路径到会话状态
-                st.session_state.video_path = temp_video_path
+            # 将上传的视频保存到临时目录
+            temp_video_path = os.path.join("data", "temp", uploaded_file.name)
+            with open(temp_video_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            st.success(f"视频已保存到: {temp_video_path}")
+            
+            # 保存视频路径到会话状态
+            st.session_state.video_path = temp_video_path
         
-        with col2:
-            st.subheader("方式二：阿里云OSS视频")
+        # 添加分隔线
+        st.markdown("---")
+        
+        # 方式二：阿里云OSS视频
+        st.subheader("方式二：阿里云OSS视频")
+        
+        # 默认CSV路径
+        default_csv_path = os.path.join("data", "input", "export_urls.csv")
+        
+        # 检查默认CSV文件是否存在
+        if os.path.exists(default_csv_path):
+            st.info(f"已找到默认URL列表: {default_csv_path}")
             
-            # 默认CSV路径
-            default_csv_path = os.path.join("data", "input", "export_urls.csv")
-            
-            # 检查默认CSV文件是否存在
-            if os.path.exists(default_csv_path):
-                st.info(f"已找到默认URL列表: {default_csv_path}")
+            # 加载CSV文件
+            try:
+                df = pd.read_csv(default_csv_path)
                 
-                # 加载CSV文件
-                try:
-                    df = pd.read_csv(default_csv_path)
+                # 检查文件格式
+                if 'object' in df.columns and 'url' in df.columns:
+                    # 过滤出视频文件
+                    video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.m4v', '.webm', '.flv', '.wmv']
+                    video_files = []
                     
-                    # 检查文件格式
-                    if 'object' in df.columns and 'url' in df.columns:
-                        # 过滤出视频文件
-                        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.m4v', '.webm', '.flv', '.wmv']
-                        video_files = []
+                    for _, row in df.iterrows():
+                        obj_name = row['object']
+                        url = row['url']
+                        file_name = os.path.basename(urllib.parse.unquote(obj_name))
                         
-                        for _, row in df.iterrows():
-                            obj_name = row['object']
-                            url = row['url']
-                            file_name = os.path.basename(urllib.parse.unquote(obj_name))
-                            
-                            # 检查是否为视频文件
-                            if any(file_name.lower().endswith(ext) for ext in video_extensions):
-                                video_files.append({
-                                    'file_name': file_name,
-                                    'object': obj_name,
-                                    'url': url
-                                })
+                        # 检查是否为视频文件
+                        if any(file_name.lower().endswith(ext) for ext in video_extensions):
+                            video_files.append({
+                                'file_name': file_name,
+                                'object': obj_name,
+                                'url': url
+                            })
+                    
+                    if video_files:
+                        # 显示可选择的视频文件
+                        st.write(f"找到 {len(video_files)} 个视频文件:")
                         
-                        if video_files:
-                            # 显示可选择的视频文件
-                            st.write(f"找到 {len(video_files)} 个视频文件:")
-                            
-                            # 创建选择框
-                            selected_index = st.selectbox(
-                                "选择要分析的OSS视频", 
-                                range(len(video_files)),
-                                format_func=lambda i: video_files[i]['file_name']
-                            )
-                            
-                            # 显示选中的视频信息
-                            selected_video = video_files[selected_index]
-                            st.markdown(f"""
-                            **选中的视频**:  
-                            - 文件名: {selected_video['file_name']}  
-                            - 对象名: {selected_video['object']}
-                            """)
-                            
-                            # 添加单个视频选择按钮和批量分析按钮
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("使用此OSS视频", key="use_oss_video"):
-                                    # 保存OSS视频信息到会话状态
-                                    st.session_state.oss_video = selected_video
-                                    st.session_state.video_source = "oss"
-                                    st.session_state.batch_mode = False
-                                    st.success(f"已选择OSS视频: {selected_video['file_name']}")
-                            
-                            with col2:
-                                if st.button("批量分析所有视频", key="batch_analyze_videos"):
-                                    # 保存所有视频信息到会话状态
-                                    st.session_state.all_oss_videos = video_files
-                                    st.session_state.video_source = "oss_batch"
-                                    st.session_state.batch_mode = True
-                                    st.success(f"已选择批量分析 {len(video_files)} 个视频")
-                        else:
-                            st.warning("在CSV文件中没有找到视频文件。")
+                        # 创建选择框
+                        selected_index = st.selectbox(
+                            "选择要分析的OSS视频", 
+                            range(len(video_files)),
+                            format_func=lambda i: video_files[i]['file_name']
+                        )
+                        
+                        # 显示选中的视频信息
+                        selected_video = video_files[selected_index]
+                        st.markdown(f"""
+                        **选中的视频**:  
+                        - 文件名: {selected_video['file_name']}  
+                        - 对象名: {selected_video['object']}
+                        """)
+                        
+                        # 添加单个视频选择按钮和批量分析按钮，保持两列布局
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("使用此OSS视频", key="use_oss_video"):
+                                # 保存OSS视频信息到会话状态
+                                st.session_state.oss_video = selected_video
+                                st.session_state.video_source = "oss"
+                                st.session_state.batch_mode = False
+                                st.success(f"已选择OSS视频: {selected_video['file_name']}")
+                        
+                        with col2:
+                            if st.button("批量分析所有视频", key="batch_analyze_videos"):
+                                # 保存所有视频信息到会话状态
+                                st.session_state.all_oss_videos = video_files
+                                st.session_state.video_source = "oss_batch"
+                                st.session_state.batch_mode = True
+                                st.success(f"已选择批量分析 {len(video_files)} 个视频")
                     else:
-                        st.error("CSV文件格式不正确，必须包含'object'和'url'列。")
-                except Exception as e:
-                    st.error(f"读取CSV文件出错: {str(e)}")
-            else:
-                st.warning(f"默认OSS URL列表文件不存在: {default_csv_path}")
-                st.info("您可以上传一个包含阿里云OSS视频URL的CSV文件")
+                        st.warning("在CSV文件中没有找到视频文件。")
+                else:
+                    st.error("CSV文件格式不正确，必须包含'object'和'url'列。")
+            except Exception as e:
+                st.error(f"读取CSV文件出错: {str(e)}")
+        else:
+            st.warning(f"默认OSS URL列表文件不存在: {default_csv_path}")
+            st.info("您可以上传一个包含阿里云OSS视频URL的CSV文件")
+        
+        # 添加自定义CSV上传选项
+        custom_csv = st.file_uploader("上传OSS URL列表", type=["csv"], help="必须包含object和url两列")
+        if custom_csv:
+            # 保存上传的CSV文件
+            os.makedirs(os.path.join("data", "input"), exist_ok=True)
+            custom_csv_path = os.path.join("data", "input", custom_csv.name)
+            with open(custom_csv_path, "wb") as f:
+                f.write(custom_csv.getbuffer())
             
-            # 添加自定义CSV上传选项
-            custom_csv = st.file_uploader("上传OSS URL列表", type=["csv"], help="必须包含object和url两列")
-            if custom_csv:
-                # 保存上传的CSV文件
-                os.makedirs(os.path.join("data", "input"), exist_ok=True)
-                custom_csv_path = os.path.join("data", "input", custom_csv.name)
-                with open(custom_csv_path, "wb") as f:
-                    f.write(custom_csv.getbuffer())
-                
-                st.success(f"已上传OSS URL列表: {custom_csv.name}")
-                st.info("请刷新页面加载新的URL列表")
+            st.success(f"已上传OSS URL列表: {custom_csv.name}")
+            st.info("请刷新页面加载新的URL列表")
     
     # 分析设置选项卡
     with analysis_tab:

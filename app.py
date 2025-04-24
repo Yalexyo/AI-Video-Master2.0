@@ -44,7 +44,7 @@ else:
 
 def main():
     """
-    简化的主应用入口函数，只负责初始化和重定向
+    简化的主应用入口函数，通过自动跳转到视频分析页面
     """
     try:
         logger.info("启动应用")
@@ -81,18 +81,18 @@ def main():
             if 'dimensions' not in st.session_state:
                 st.session_state.dimensions = {'title': '品牌认知', 'level1': [], 'level2': {}}
         
-        # 使用通用导航组件
-        create_sidebar_navigation("视频分析")
+        # 自动跳转到视频分析页面
+        st.markdown("""
+        <meta http-equiv="refresh" content="0;url=/video_analysis" />
+        <script>
+            window.location.href = "/video_analysis"
+        </script>
+        """, unsafe_allow_html=True)
         
-        # 页面主体内容
-        st.title("视频分析")
-        st.markdown("使用视频分析功能处理您的视频")
-
-        # 显示视频分析功能说明
-        st.info("请使用左侧导航栏中的'视频分析'功能来分析您的视频内容。")
+        # 显示备用链接，以防自动跳转失败
+        st.info("正在跳转到视频分析页面，如果没有自动跳转，请点击下方按钮")
         
-        # 提供跳转按钮
-        if st.button("前往视频分析", type="primary"):
+        if st.button("前往视频分析页面", type="primary"):
             st.switch_page("pages/video_analysis.py")
     
     except Exception as e:
