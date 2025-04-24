@@ -115,6 +115,10 @@ footer {
     color: white;
     border: none;
 }
+/* 卡片相对定位 */
+.card-container {
+    margin-bottom: 20px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,6 +128,9 @@ logger = logging.getLogger(__name__)
 # 初始化热词服务
 hot_words_service = HotWordsService()
 
+# 默认转录热词列表ID
+DEFAULT_VOCABULARY_ID = "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+
 def show():
     """渲染热词管理页面"""
     # 添加导航栏, 并标记当前页面
@@ -132,6 +139,10 @@ def show():
     # 页面标题
     st.title("💬 热词管理")
     st.markdown("---")
+    
+    # 初始化会话状态中的当前选定热词列表ID
+    if "current_vocabulary_id" not in st.session_state:
+        st.session_state.current_vocabulary_id = DEFAULT_VOCABULARY_ID
     
     # 注入自定义样式
     st.markdown("""
@@ -434,13 +445,14 @@ def show():
                 with card:
                     # 创建卡片样式的热词表展示
                     st.markdown(f"""
-                    <div class="hotwords-card">
-                        <div class="hotwords-card-header">
-                            <h3>{vocab_name} <span class="hotword-id">ID: {vocab_id}</span></h3>
-                            <div class="hotword-info">
-                                <span class="hotword-date">创建时间: {create_time}</span>
+                    <div class="card-container">
+                        <div class="hotwords-card">
+                            <div class="hotwords-card-header">
+                                <h3>{vocab_name} <span class="hotword-id">ID: {vocab_id}</span></h3>
+                                <div class="hotword-info">
+                                    <span class="hotword-date">创建时间: {create_time}</span>
+                                </div>
                             </div>
-                        </div>
                     """, unsafe_allow_html=True)
                     
                     # 获取热词表详情
@@ -510,7 +522,7 @@ def show():
                             st.rerun()
                     
                     # 关闭卡片标签
-                    st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown("</div></div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     show()

@@ -63,11 +63,20 @@ except ImportError as e:
     except Exception as e:
         st.error(f"备用导入方式也失败: {e}")
 
+# 导入热词服务
+from src.core.hot_words_service import HotWordsService
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
 # 文件路径
 ANALYSIS_RESULTS_DIR = os.path.join('data', 'video_analysis', 'results')
+
+# 默认热词表ID
+DEFAULT_VOCABULARY_ID = "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+
+# 初始化热词服务
+hot_words_service = HotWordsService()
 
 from src.ui_elements.custom_theme import set_custom_theme
 
@@ -78,10 +87,14 @@ def load_dimensions():
     else:
         return {'title': "", 'level1': [], 'level2': {}}
 
-def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
+def process_video_analysis(file, analysis_type, dimensions=None, keywords=None, vocabulary_id=None):
     """处理视频分析"""
     # 确保结果目录存在
     os.makedirs(ANALYSIS_RESULTS_DIR, exist_ok=True)
+    
+    # 记录使用的热词表ID
+    if vocabulary_id:
+        logger.info(f"使用热词表ID进行视频分析: {vocabulary_id}")
     
     try:
         # 读取CSV文件
@@ -247,12 +260,72 @@ def show():
     # 页面主体内容
     st.title("视频分析")
     
+    # 加载默认热词表ID
+    if "selected_vocabulary_id" not in st.session_state:
+        # 尝试从配置中获取默认热词表ID
+        try:
+            default_id = hot_words_service.get_default_vocabulary_id()
+            st.session_state.selected_vocabulary_id = default_id if default_id else DEFAULT_VOCABULARY_ID
+            logger.info(f"已设置默认热词表ID: {st.session_state.selected_vocabulary_id}")
+        except Exception as e:
+            logger.error(f"加载默认热词表出错: {str(e)}")
+            st.session_state.selected_vocabulary_id = DEFAULT_VOCABULARY_ID
+    
     # 创建选项卡
     upload_tab, analysis_tab = st.tabs(["上传视频", "分析设置"])
     
     # 上传视频选项卡
     with upload_tab:
         st.header("上传视频")
+        
+        # 添加热词表选择
+        st.subheader("转录设置")
+        
+        # 加载所有可用的热词表
+        with st.spinner("加载热词表..."):
+            vocabularies, error_msg = hot_words_service.check_cloud_hotwords()
+        
+        if vocabularies:
+            # 创建热词表选择下拉框
+            vocab_options = []
+            vocab_display_names = []
+            
+            for vocab in vocabularies:
+                vocab_id = vocab.get('vocabulary_id', '')
+                vocab_name = vocab.get('name', vocab_id)
+                vocab_options.append(vocab_id)
+                vocab_display_names.append(f"{vocab_name} ({vocab_id})")
+            
+            # 找到当前选中ID在列表中的索引
+            selected_index = 0
+            if st.session_state.selected_vocabulary_id in vocab_options:
+                selected_index = vocab_options.index(st.session_state.selected_vocabulary_id)
+            
+            # 显示热词表选择下拉框
+            selected_display = st.selectbox(
+                "选择用于视频转录的热词表",
+                options=vocab_display_names,
+                index=selected_index,
+                help="热词表将用于提高特定词汇的识别准确率"
+            )
+            
+            # 更新选中的热词表ID
+            selected_index = vocab_display_names.index(selected_display)
+            st.session_state.selected_vocabulary_id = vocab_options[selected_index]
+            
+            # 显示当前选中的热词表ID以及热词管理提示
+            current_hotword_name = selected_display.split(' (')[0]
+            current_hotword_id = st.session_state.selected_vocabulary_id
+            st.info(f"当前选中的热词表: {current_hotword_id}，要添加或修改热词表，请前往【热词管理页面】")
+        else:
+            if error_msg:
+                st.warning(f"加载热词表失败: {error_msg}")
+            else:
+                st.warning("未找到可用的热词表，将使用默认设置进行转录")
+            
+            # 使用默认热词表ID
+            st.session_state.selected_vocabulary_id = DEFAULT_VOCABULARY_ID
+        
         uploaded_file = st.file_uploader("选择要分析的视频文件", type=["mp4", "mov", "avi", "mkv"], help="支持常见视频格式")
         
         if uploaded_file:
@@ -328,8 +401,13 @@ def show():
                                 })
                                 sample_data.to_csv(sample_data_path, index=False)
                             
-                            # 处理分析
-                            results, result_file = process_video_analysis(sample_data_path, "维度分析", dimensions)
+                            # 处理分析 - 传入当前选中的热词表ID
+                            results, result_file = process_video_analysis(
+                                sample_data_path, 
+                                "维度分析", 
+                                dimensions,
+                                vocabulary_id=st.session_state.selected_vocabulary_id
+                            )
                             
                             # 显示结果
                             if results:
@@ -371,8 +449,13 @@ def show():
                                 })
                                 sample_data.to_csv(sample_data_path, index=False)
                             
-                            # 处理分析
-                            results, result_file = process_video_analysis(sample_data_path, "关键词分析", keywords=keywords)
+                            # 处理分析 - 传入当前选中的热词表ID
+                            results, result_file = process_video_analysis(
+                                sample_data_path, 
+                                "关键词分析", 
+                                keywords=keywords,
+                                vocabulary_id=st.session_state.selected_vocabulary_id
+                            )
                             
                             # 显示结果
                             if results:
