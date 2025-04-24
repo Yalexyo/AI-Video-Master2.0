@@ -254,9 +254,6 @@ def add_level1_dimension(new_dim1, input_key):
     # 持久化维度结构
     persist_dimensions()
     
-    # 清空输入框
-    st.session_state[input_key] = ""
-    
     # 显示成功消息
     st.success(f"已添加一级维度: {new_dim1}")
     
@@ -293,9 +290,6 @@ def add_level2_dimension(dim1, new_dim2, input_key):
     
     # 持久化维度结构
     persist_dimensions()
-    
-    # 清空输入框
-    st.session_state[input_key] = ""
     
     # 显示成功消息
     st.success(f"已添加二级维度 '{new_dim2}' 到 '{dim1}'")
@@ -466,25 +460,23 @@ def apply_template(template_data: Dict):
         logger.error(f"应用模板时出错: {str(e)}")
         return False
 
-def save_template(template_name: str, template_data: Dict):
+def save_template(template_path: str, template_name: str):
     """保存模板到文件和会话状态"""
     logger.info(f"保存模板: {template_name}")
     
     try:
+        # 获取当前维度结构
+        template_data = st.session_state.dimensions
+        if not template_data:
+            logger.error("无法保存模板：维度数据为空")
+            return False
+            
         # 保存到会话状态
         st.session_state.templates[template_name] = template_data
         
-        # 保存到文件
-        template_dir = os.path.join('data', 'dimensions')
-        os.makedirs(template_dir, exist_ok=True)
-        
-        # 将模板名称转换为文件名
-        template_file = f"{template_name.replace(' ', '_')}.json"
-        template_path = os.path.join(template_dir, template_file)
-        
         # 写入JSON文件
         with open(template_path, 'w', encoding='utf-8') as f:
-            json.dump(template_data, f, ensure_ascii=False, indent=2)
+            json.dump({template_name: template_data}, f, ensure_ascii=False, indent=2)
         
         logger.info(f"模板已保存到文件: {template_path}")
         return True

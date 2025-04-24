@@ -24,6 +24,20 @@ def get_available_templates():
 
 def load_dimension_template(template_name):
     """根据模板名称加载维度模板文件"""
+    # 首先检查是否是从core_templates.json加载指定模板
+    core_templates_path = os.path.join(DIMENSIONS_DIR, "core_templates.json")
+    if os.path.exists(core_templates_path):
+        try:
+            with open(core_templates_path, 'r', encoding='utf-8') as f:
+                core_templates = json.load(f)
+                # 检查模板名称是否存在于core_templates中
+                if template_name in core_templates:
+                    logger.info(f"从core_templates.json加载模板: {template_name}")
+                    return core_templates[template_name]
+        except Exception as e:
+            logger.error(f"加载core_templates.json出错: {str(e)}")
+
+    # 如果不是core_templates或加载失败，则尝试加载单独的模板文件
     file_path = os.path.join(DIMENSIONS_DIR, f"{template_name}.json")
     if os.path.exists(file_path):
         try:
@@ -161,7 +175,7 @@ def show():
                         
                         # 保存模板
                         template_path = os.path.join(DIMENSIONS_DIR, f"{clean_template_name}.json")
-                        if save_template(template_path, clean_template_name, st.session_state.dimensions):
+                        if save_template(template_path, clean_template_name):
                             st.success(f"模板已保存至 {template_path}")
                             # 更新当前模板名称
                             st.session_state.current_template_name = clean_template_name
