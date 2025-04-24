@@ -1,0 +1,52 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 分支管理规则
+type: codebase-conventions
+
+> 此规则定义了项目中Git分支的管理规范和快捷操作。
+
+## 分支命名规范
+
+项目使用以下命名约定创建分支：
+
+1. **Bug修复分支**: `debug/{功能名}`
+   - 用于修复问题和Bug
+   - 快捷键: `Alt+Shift+D`
+
+2. **UI优化分支**: `ui/{组件名}`
+   - 用于优化UI界面和交互
+   - 快捷键: `Alt+Shift+U`
+
+3. **新功能分支**: `new-features/{功能名}`
+   - 用于开发新功能
+   - 快捷键: `Alt+Shift+N`
+
+## 快速创建分支
+
+### 通过命令行创建
+
+```bash
+# 创建Bug修复分支
+./scripts/create_branch.sh debug issue-name
+
+# 创建UI优化分支
+./scripts/create_branch.sh ui component-name
+
+# 创建新功能分支
+./scripts/create_branch.sh new feature-name
+```
+
+### 通过命令面板创建
+
+1. 按下 `Ctrl+Shift+P` 打开命令面板
+2. 输入 "Tasks: Run Task"
+3. 选择所需的分支创建任务
+
+## 注意事项
+
+- 所有分支都应该从`main`分支创建
+- 分支名称应使用小写字母和连字符(-)，避免使用下划线或空格
+- 完成工作后通过Pull Request合并回主分支
