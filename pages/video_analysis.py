@@ -263,14 +263,18 @@ def show_analysis_results(results, result_file):
     st.markdown("### 匹配详情")
     
     if results['type'] == "维度分析":
+        # 创建一个tab_id计数器，确保每个tab有唯一ID
+        tab_id = 0
+        
         # 按维度分组显示
         for dim1 in results.get('dimensions', {}).get('level1', []):
             # 过滤出当前一级维度的匹配
             dim1_matches = [m for m in results['matches'] if m['dimension_level1'] == dim1]
             
             if dim1_matches:
+                # 使用expander显示一级维度
                 with st.expander(f"{dim1} ({len(dim1_matches)}个匹配)", expanded=False):
-                    # 按二级维度分组
+                    # 按二级维度分组并直接显示内容，而不是再使用嵌套的expander
                     for dim2 in results.get('dimensions', {}).get('level2', {}).get(dim1, []):
                         # 过滤出当前二级维度的匹配
                         dim2_matches = [m for m in dim1_matches if m['dimension_level2'] == dim2]
@@ -278,14 +282,21 @@ def show_analysis_results(results, result_file):
                         if dim2_matches:
                             st.markdown(f"#### {dim2} ({len(dim2_matches)}个匹配)")
                             
-                            # 显示每个匹配
-                            for match in dim2_matches:
-                                st.markdown(f"""
-                                **时间点**: {match['timestamp']}  
-                                **匹配分数**: {match['score']:.2f}  
-                                **文本**: {match['text']}  
-                                ---
-                                """)
+                            # 创建一个可折叠区域的替代方案 - 使用容器
+                            dim2_container = st.container()
+                            show_details = st.checkbox(f"显示详情 - {dim2}", key=f"dim2_details_{tab_id}")
+                            tab_id += 1
+                            
+                            if show_details:
+                                with dim2_container:
+                                    # 显示每个匹配
+                                    for match in dim2_matches:
+                                        st.markdown(f"""
+                                        **时间点**: {match['timestamp']}  
+                                        **匹配分数**: {match['score']:.2f}  
+                                        **文本**: {match['text']}  
+                                        ---
+                                        """)
     
     elif results['type'] == "关键词分析":
         # 按关键词分组显示
@@ -618,8 +629,79 @@ def show():
                             for i, (results, result_file) in enumerate(all_results):
                                 video_name = results['video_info']['file_name']
                                 with st.expander(f"{i+1}. {video_name}", expanded=i==0):
-                                    # 显示单个视频的分析结果
-                                    show_analysis_results(results, result_file)
+                                    # 不使用show_analysis_results避免嵌套expander
+                                    st.markdown("## 分析结果")
+                                    
+                                    # 显示视频信息
+                                    video_info = results['video_info']
+                                    st.markdown(f"""
+                                    **视频信息**:  
+                                    - 文件名: {video_info.get('file_name', '未知')}  
+                                    - 对象名: {video_info.get('object', '未知')}
+                                    """)
+                                    
+                                    # 显示基本信息
+                                    st.markdown(f"**分析类型**: {results['type']}")
+                                    st.markdown(f"**分析时间**: {results['timestamp']}")
+                                    st.markdown(f"**匹配数量**: {len(results['matches'])}")
+                                    
+                                    # 下载按钮
+                                    with open(result_file, 'r', encoding='utf-8') as f:
+                                        json_data = f.read()
+                                        st.download_button(
+                                            label="下载分析结果 (JSON)",
+                                            data=json_data,
+                                            file_name=os.path.basename(result_file),
+                                            mime="application/json"
+                                        )
+                                    
+                                    # 显示匹配结果
+                                    st.markdown("### 匹配详情")
+                                    
+                                    # 根据分析类型显示不同的结果（直接显示，不使用嵌套expander）
+                                    if results['type'] == "维度分析":
+                                        # 直接显示所有维度匹配，不使用expander
+                                        for dim1 in results.get('dimensions', {}).get('level1', []):
+                                            # 过滤出当前一级维度的匹配
+                                            dim1_matches = [m for m in results['matches'] if m['dimension_level1'] == dim1]
+                                            
+                                            if dim1_matches:
+                                                st.markdown(f"#### {dim1} ({len(dim1_matches)}个匹配)")
+                                                
+                                                # 按二级维度分组
+                                                for dim2 in results.get('dimensions', {}).get('level2', {}).get(dim1, []):
+                                                    # 过滤出当前二级维度的匹配
+                                                    dim2_matches = [m for m in dim1_matches if m['dimension_level2'] == dim2]
+                                                    
+                                                    if dim2_matches:
+                                                        st.markdown(f"##### {dim2} ({len(dim2_matches)}个匹配)")
+                                                        
+                                                        # 显示每个匹配
+                                                        for match in dim2_matches:
+                                                            st.markdown(f"""
+                                                            **时间点**: {match['timestamp']}  
+                                                            **匹配分数**: {match['score']:.2f}  
+                                                            **文本**: {match['text']}  
+                                                            ---
+                                                            """)
+                                    
+                                    elif results['type'] == "关键词分析":
+                                        # 直接显示所有关键词匹配，不使用expander
+                                        for keyword in results.get('keywords', []):
+                                            # 过滤出当前关键词的匹配
+                                            keyword_matches = [m for m in results['matches'] if m['keyword'] == keyword]
+                                            
+                                            if keyword_matches:
+                                                st.markdown(f"#### 关键词: {keyword} ({len(keyword_matches)}个匹配)")
+                                                
+                                                # 显示每个匹配
+                                                for match in keyword_matches:
+                                                    st.markdown(f"""
+                                                    **时间点**: {match['timestamp']}  
+                                                    **匹配分数**: {match['score']:.2f}  
+                                                    **文本**: {match['text']}  
+                                                    ---
+                                                    """)
                     else:
                         # 单个视频分析模式
                         with st.spinner("正在处理视频分析..."):
@@ -744,8 +826,79 @@ def show():
                             for i, (results, result_file) in enumerate(all_results):
                                 video_name = results['video_info']['file_name']
                                 with st.expander(f"{i+1}. {video_name}", expanded=i==0):
-                                    # 显示单个视频的分析结果
-                                    show_analysis_results(results, result_file)
+                                    # 不使用show_analysis_results避免嵌套expander
+                                    st.markdown("## 分析结果")
+                                    
+                                    # 显示视频信息
+                                    video_info = results['video_info']
+                                    st.markdown(f"""
+                                    **视频信息**:  
+                                    - 文件名: {video_info.get('file_name', '未知')}  
+                                    - 对象名: {video_info.get('object', '未知')}
+                                    """)
+                                    
+                                    # 显示基本信息
+                                    st.markdown(f"**分析类型**: {results['type']}")
+                                    st.markdown(f"**分析时间**: {results['timestamp']}")
+                                    st.markdown(f"**匹配数量**: {len(results['matches'])}")
+                                    
+                                    # 下载按钮
+                                    with open(result_file, 'r', encoding='utf-8') as f:
+                                        json_data = f.read()
+                                        st.download_button(
+                                            label="下载分析结果 (JSON)",
+                                            data=json_data,
+                                            file_name=os.path.basename(result_file),
+                                            mime="application/json"
+                                        )
+                                    
+                                    # 显示匹配结果
+                                    st.markdown("### 匹配详情")
+                                    
+                                    # 根据分析类型显示不同的结果（直接显示，不使用嵌套expander）
+                                    if results['type'] == "维度分析":
+                                        # 直接显示所有维度匹配，不使用expander
+                                        for dim1 in results.get('dimensions', {}).get('level1', []):
+                                            # 过滤出当前一级维度的匹配
+                                            dim1_matches = [m for m in results['matches'] if m['dimension_level1'] == dim1]
+                                            
+                                            if dim1_matches:
+                                                st.markdown(f"#### {dim1} ({len(dim1_matches)}个匹配)")
+                                                
+                                                # 按二级维度分组
+                                                for dim2 in results.get('dimensions', {}).get('level2', {}).get(dim1, []):
+                                                    # 过滤出当前二级维度的匹配
+                                                    dim2_matches = [m for m in dim1_matches if m['dimension_level2'] == dim2]
+                                                    
+                                                    if dim2_matches:
+                                                        st.markdown(f"##### {dim2} ({len(dim2_matches)}个匹配)")
+                                                        
+                                                        # 显示每个匹配
+                                                        for match in dim2_matches:
+                                                            st.markdown(f"""
+                                                            **时间点**: {match['timestamp']}  
+                                                            **匹配分数**: {match['score']:.2f}  
+                                                            **文本**: {match['text']}  
+                                                            ---
+                                                            """)
+                                    
+                                    elif results['type'] == "关键词分析":
+                                        # 直接显示所有关键词匹配，不使用expander
+                                        for keyword in results.get('keywords', []):
+                                            # 过滤出当前关键词的匹配
+                                            keyword_matches = [m for m in results['matches'] if m['keyword'] == keyword]
+                                            
+                                            if keyword_matches:
+                                                st.markdown(f"#### 关键词: {keyword} ({len(keyword_matches)}个匹配)")
+                                                
+                                                # 显示每个匹配
+                                                for match in keyword_matches:
+                                                    st.markdown(f"""
+                                                    **时间点**: {match['timestamp']}  
+                                                    **匹配分数**: {match['score']:.2f}  
+                                                    **文本**: {match['text']}  
+                                                    ---
+                                                    """)
                     else:
                         # 单个视频分析模式
                         with st.spinner("正在处理视频分析..."):
