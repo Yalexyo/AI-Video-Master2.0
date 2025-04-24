@@ -13,3 +13,4 @@ moviepy==1.0.3
 nest-asyncio==1.6.0
 tqdm==4.66.1
 dashscope>=1.10.0  # 阿里云DashScope API
+jieba==0.42.1  # 中文分词库
