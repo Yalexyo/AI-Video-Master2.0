@@ -525,6 +525,39 @@ class HotWordsService:
         logger.warning(f"热词不存在: {word}")
         return False
 
+    def get_default_vocabulary_id(self):
+        """
+        获取默认的热词表ID
+        
+        返回:
+            vocabulary_id: 默认热词表ID，如果没有设置则返回None
+        """
+        # 默认的ID
+        default_id = "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+        
+        try:
+            # 配置文件路径
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "src", "config")
+            config_file = os.path.join(config_dir, "vocabulary_config.json")
+            
+            # 检查配置文件是否存在
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config_data = json.load(f)
+                
+                # 获取默认ID
+                vocabulary_id = config_data.get("default_vocabulary_id")
+                if vocabulary_id:
+                    logger.info(f"从配置文件加载默认热词表ID: {vocabulary_id}")
+                    return vocabulary_id
+        
+        except Exception as e:
+            logger.error(f"加载默认热词表ID失败: {str(e)}")
+        
+        # 返回硬编码的默认ID
+        logger.info(f"使用硬编码的默认热词表ID: {default_id}")
+        return default_id
+
 # 单例模式
 _service_instance = None
 
