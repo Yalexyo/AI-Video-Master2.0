@@ -203,31 +203,30 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
         # 更新进度到20%
         progress_bar.progress(0.2)
         
-        # 使用VideoProcessor处理视频
-        status_text.text("正在使用语音识别处理视频...")
-        
-        # 检查类是否可导入（这可以在实际项目中简化）
-        try:
-            # 导入VideoProcessor
-            from utils.processor import VideoProcessor
-            processor = VideoProcessor()
-            
-            # 处理视频文件，传入热词表ID
-            output_csv = processor.process_video_file(video_path, vocabulary_id=vocabulary_id)
-            
-            # 检查处理是否成功，如果output_csv为空或文件不存在，则表示失败
-            if not output_csv or not os.path.exists(output_csv):
-                status_text.error("视频语音识别处理失败，无法进行后续分析。请检查日志获取详细错误信息。")
-                return None, None # 返回None表示处理失败
-            
-            # 读取CSV文件
-            df = pd.read_csv(output_csv)
-            status_text.text(f"视频处理完成，识别了 {len(df)} 条句子")
-                
-        except ImportError:
-            # VideoProcessor不可用
-            status_text.error("核心处理模块(VideoProcessor)导入失败，无法处理视频。")
-            return None, None
+        # 使用VideoProcessor处理视频或直接读取CSV
+        if video_path.lower().endswith('.csv'):
+            # 直接读取已存在的字幕CSV，跳过视频处理
+            status_text.text("检测到CSV字幕文件，直接加载文本...")
+            try:
+                df = pd.read_csv(video_path)
+                status_text.text(f"已加载字幕，共 {len(df)} 条记录")
+            except Exception as e:
+                status_text.error(f"读取CSV失败: {str(e)}")
+                return None, None
+        else:
+            status_text.text("正在使用语音识别处理视频...")
+            try:
+                from utils.processor import VideoProcessor
+                processor = VideoProcessor()
+                output_csv = processor.process_video_file(video_path, vocabulary_id=vocabulary_id)
+                if not output_csv or not os.path.exists(output_csv):
+                    status_text.error("视频语音识别处理失败，无法进行后续分析。请检查日志获取详细错误信息。")
+                    return None, None
+                df = pd.read_csv(output_csv)
+                status_text.text(f"视频处理完成，识别了 {len(df)} 条句子")
+            except ImportError:
+                status_text.error("核心处理模块(VideoProcessor)导入失败，无法处理视频。")
+                return None, None
         
         # 更新进度到50%
         progress_bar.progress(0.5)
@@ -502,13 +501,6 @@ def show():
     st.title("🎬 视频分析")
     st.write("上传视频或提供视频链接，进行语音和内容分析")
     
-    # 分析类型选择
-    analysis_type = st.radio(
-        "选择分析类型:", 
-        ["维度分析", "关键词分析"],
-        horizontal=True
-    )
-    
     # 上传视频部分
     st.header("上传视频")
     
@@ -534,111 +526,88 @@ def show():
     # 添加分隔线
     st.markdown("---")
     
+    # 初始化OSS视频URL列表
+    def _load_oss_video_urls():
+        """从export_urls.csv加载OSS视频URL列表"""
+        csv_path = os.path.join("data", "input", "export_urls.csv")
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.m4v', '.webm', '.flv', '.wmv']
+        
+        if os.path.exists(csv_path):
+            try:
+                df = pd.read_csv(csv_path)
+                if 'object' in df.columns and 'url' in df.columns:
+                    # 过滤出视频文件
+                    video_files = []
+                    for _, row in df.iterrows():
+                        obj_name = row['object']
+                        url = row['url']
+                        file_name = os.path.basename(urllib.parse.unquote(obj_name))
+                        file_ext = os.path.splitext(file_name.lower())[1]
+                        
+                        # 检查是否为视频文件
+                        if file_ext in video_extensions:
+                            video_files.append({
+                                'file_name': file_name,
+                                'object': obj_name,
+                                'url': url
+                            })
+                    
+                    logger.info(f"从export_urls.csv成功加载了 {len(video_files)} 个视频文件")
+                    return video_files
+                else:
+                    logger.error("CSV文件格式不正确，必须包含'object'和'url'列")
+            except Exception as e:
+                logger.error(f"读取OSS URL列表失败: {str(e)}")
+        else:
+            logger.warning(f"OSS URL列表文件不存在: {csv_path}")
+        
+        return []
+    
+    # 加载OSS视频
+    if 'oss_videos' not in st.session_state:
+        st.session_state.oss_videos = _load_oss_video_urls()
+    
     # 方式二：阿里云OSS视频
     st.subheader("方式二：阿里云OSS视频")
     
-    # 移动到这里：添加自定义CSV上传选项
-    st.markdown("### 上传OSS URL列表")
-    custom_csv = st.file_uploader("上传OSS URL列表", type=["csv"], help="必须包含object和url两列")
-    if custom_csv:
-        # 保存上传的CSV文件
-        os.makedirs(os.path.join("data", "input"), exist_ok=True)
-        custom_csv_path = os.path.join("data", "input", custom_csv.name)
-        with open(custom_csv_path, "wb") as f:
-            f.write(custom_csv.getbuffer())
+    # 显示可选择的视频文件
+    if st.session_state.oss_videos:
+        st.info(f"找到 {len(st.session_state.oss_videos)} 个OSS视频文件")
         
-        st.success(f"已上传OSS URL列表: {custom_csv.name}")
-        st.info("请刷新页面加载新的URL列表")
-    
-    # 默认CSV路径
-    default_csv_path = os.path.join("data", "input", "export_urls.csv")
-    
-    # 初始化视频模式选择
-    if 'oss_mode' not in st.session_state:
-        st.session_state.oss_mode = "batch"  # 默认为批量模式
-    
-    # 检查默认CSV文件是否存在
-    if os.path.exists(default_csv_path):
-        st.info(f"已找到默认URL列表: {default_csv_path}")
+        # 创建选择框
+        selected_index = st.selectbox(
+            "选择要分析的OSS视频", 
+            range(len(st.session_state.oss_videos)),
+            format_func=lambda i: st.session_state.oss_videos[i]['file_name']
+        )
         
-        # 加载CSV文件
-        try:
-            df = pd.read_csv(default_csv_path)
-            
-            # 检查文件格式
-            if 'object' in df.columns and 'url' in df.columns:
-                # 过滤出视频文件
-                video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.m4v', '.webm', '.flv', '.wmv']
-                video_files = []
-                
-                for _, row in df.iterrows():
-                    obj_name = row['object']
-                    url = row['url']
-                    file_name = os.path.basename(urllib.parse.unquote(obj_name))
-                    
-                    # 检查是否为视频文件
-                    if any(file_name.lower().endswith(ext) for ext in video_extensions):
-                        video_files.append({
-                            'file_name': file_name,
-                            'object': obj_name,
-                            'url': url
-                        })
-                
-                if video_files:
-                    # 显示可选择的视频文件
-                    st.write(f"找到 {len(video_files)} 个视频文件:")
-                    
-                    # 创建选择框
-                    selected_index = st.selectbox(
-                        "选择要分析的OSS视频", 
-                        range(len(video_files)),
-                        format_func=lambda i: video_files[i]['file_name']
-                    )
-                    
-                    # 显示选中的视频信息
-                    selected_video = video_files[selected_index]
-                    st.markdown(f"""
-                    **选中的视频**:  
-                    - 文件名: {selected_video['file_name']}  
-                    - 对象名: {selected_video['object']}
-                    """)
-                    
-                    # 替换按钮为radio button
-                    oss_mode = st.radio(
-                        "选择分析模式",
-                        ["使用此OSS视频", "批量分析所有视频"],
-                        index=1,  # 默认选择批量分析
-                        key="oss_mode_radio"
-                    )
-                    
-                    # 根据选择设置session_state
-                    if oss_mode == "使用此OSS视频":
-                        # 保存OSS视频信息到会话状态
-                        st.session_state.oss_video = selected_video
-                        st.session_state.video_source = "oss"
-                        st.session_state.batch_mode = False
-                        st.session_state.oss_mode = "single"
-                    else:  # 批量分析所有视频
-                        # 保存所有视频信息到会话状态
-                        st.session_state.all_oss_videos = video_files
-                        st.session_state.video_source = "oss_batch"
-                        st.session_state.batch_mode = True
-                        st.session_state.oss_mode = "batch"
-                    
-                    # 显示当前模式的提示
-                    if st.session_state.oss_mode == "single":
-                        st.success(f"已选择OSS视频: {selected_video['file_name']}")
-                    else:
-                        st.success(f"将批量分析 {len(video_files)} 个视频")
-                else:
-                    st.warning("在CSV文件中没有找到视频文件。")
-            else:
-                st.error("CSV文件格式不正确，必须包含'object'和'url'列。")
-        except Exception as e:
-            st.error(f"读取CSV文件出错: {str(e)}")
+        # 显示选中的视频信息
+        selected_video = st.session_state.oss_videos[selected_index]
+        st.markdown(f"""
+        **选中的视频**:  
+        - 文件名: {selected_video['file_name']}  
+        - 对象名: {selected_video['object']}
+        - URL: {selected_video['url']}
+        """)
+        
+        # 保存OSS视频信息到会话状态
+        st.session_state.oss_video = selected_video
+        st.session_state.video_source = "oss"
     else:
-        st.warning(f"默认OSS URL列表文件不存在: {default_csv_path}")
-        st.info("您可以上传一个包含阿里云OSS视频URL的CSV文件")
+        st.warning("未找到可用的OSS视频。请确认data/input/export_urls.csv文件存在且格式正确。")
+        
+        # 上传自定义CSV
+        st.markdown("### 上传OSS URL列表")
+        custom_csv = st.file_uploader("上传OSS URL列表", type=["csv"], help="必须包含object和url两列")
+        if custom_csv:
+            # 保存上传的CSV文件
+            os.makedirs(os.path.join("data", "input"), exist_ok=True)
+            custom_csv_path = os.path.join("data", "input", "export_urls.csv")
+            with open(custom_csv_path, "wb") as f:
+                f.write(custom_csv.getbuffer())
+            
+            st.success(f"已上传OSS URL列表，请刷新页面加载URL")
+            st.session_state.oss_videos = _load_oss_video_urls()
     
     # 添加分隔线
     st.markdown("---")
@@ -663,7 +632,18 @@ def show():
             st.info(f"当前分析本地视频: {os.path.basename(st.session_state.video_path)}")
         
         # 分析类型选择
-        analysis_type = st.radio("选择分析类型", ["维度分析", "关键词分析"])
+        if 'analysis_type' not in st.session_state:
+            st.session_state.analysis_type = "维度分析"  # 默认值
+            
+        analysis_type = st.radio(
+            "选择分析类型", 
+            ["维度分析", "关键词分析"],
+            key="analysis_type_radio",
+            horizontal=True
+        )
+        
+        # 保存选择到session_state，供其他地方使用
+        st.session_state.analysis_type = analysis_type
         
         if analysis_type == "维度分析":
             # 显示维度选择
@@ -885,39 +865,38 @@ def show():
                     else:
                         # 单个视频分析模式
                         with st.spinner("正在处理视频分析..."):
+                            video_source = st.session_state.get('video_source', 'local')
+                            video_path = ""
+                            
                             if video_source == "oss":
                                 oss_video = st.session_state.oss_video
                                 st.info(f"正在分析OSS视频: {oss_video['file_name']}")
-                                st.write("视频URL: " + oss_video['url'])
+                                
+                                # 直接使用OSS URL进行处理，避免下载
+                                video_path = oss_video['url']
+                                st.write(f"视频URL: {video_path}")
                             else:
                                 video_path = st.session_state.get('video_path', '')
                                 if video_path:
                                     st.info(f"正在分析本地视频: {os.path.basename(video_path)}")
+                                else:
+                                    st.error("未选择任何视频文件")
+                                    return
                             
-                            # 这里应该有实际的视频处理逻辑
-                            # 现在我们只是模拟一个CSV文件作为输入
-                            sample_data_path = os.path.join("data", "temp", "sample_subtitles.csv")
+                            # 如果CSV文件存在且在测试模式，则使用它
+                            if 'use_sample' in st.session_state and st.session_state.use_sample:
+                                sample_data_path = os.path.join("data", "temp", "sample_subtitles.csv")
+                                if os.path.exists(sample_data_path):
+                                    st.info("使用示例字幕数据进行分析")
+                                    video_path = sample_data_path
                             
-                            # 检查是否存在样本数据，如果不存在则创建
-                            if not os.path.exists(sample_data_path):
-                                # 创建目录
-                                os.makedirs(os.path.dirname(sample_data_path), exist_ok=True)
-                                
-                                # 创建样本数据
-                                sample_data = pd.DataFrame({
-                                    'timestamp': ['00:00:10', '00:00:20', '00:00:30', '00:00:40', '00:00:50'],
-                                    'text': [
-                                        '品牌的影响力正在不断增长',
-                                        '我们需要提高用户的品牌认知度',
-                                        '用户体验是我们产品的核心竞争力',
-                                        '创新是推动品牌向前发展的关键',
-                                        '我们的产品质量得到了用户的高度认可'
-                                    ]
-                                })
-                                sample_data.to_csv(sample_data_path, index=False)
+                            # 如果没有视频路径，尝试使用示例
+                            if not video_path:
+                                st.error("未找到有效的视频路径")
+                                return
                             
                             # 处理分析
-                            results, result_file = process_video_analysis(sample_data_path, "维度分析", dimensions)
+                            results, result_file = process_video_analysis(video_path, "维度分析", dimensions)
                             
                             # 显示结果
                             if results:
@@ -1082,43 +1061,42 @@ def show():
                     else:
                         # 单个视频分析模式
                         with st.spinner("正在处理视频分析..."):
+                            video_source = st.session_state.get('video_source', 'local')
+                            video_path = ""
+                            
                             if video_source == "oss":
                                 oss_video = st.session_state.oss_video
                                 st.info(f"正在分析OSS视频: {oss_video['file_name']}")
-                                st.write("视频URL: " + oss_video['url'])
+                                
+                                # 直接使用OSS URL进行处理，避免下载
+                                video_path = oss_video['url']
+                                st.write(f"视频URL: {video_path}")
                             else:
                                 video_path = st.session_state.get('video_path', '')
                                 if video_path:
                                     st.info(f"正在分析本地视频: {os.path.basename(video_path)}")
-                                
-                                # 这里应该有实际的视频处理逻辑
-                                # 现在我们只是模拟一个CSV文件作为输入
+                                else:
+                                    st.error("未选择任何视频文件")
+                                    return
+                            
+                            # 如果CSV文件存在且在测试模式，则使用它
+                            if 'use_sample' in st.session_state and st.session_state.use_sample:
                                 sample_data_path = os.path.join("data", "temp", "sample_subtitles.csv")
-                                
-                                # 检查是否存在样本数据，如果不存在则创建
-                                if not os.path.exists(sample_data_path):
-                                    # 创建目录
-                                    os.makedirs(os.path.dirname(sample_data_path), exist_ok=True)
-                                    
-                                    # 创建样本数据
-                                    sample_data = pd.DataFrame({
-                                        'timestamp': ['00:00:10', '00:00:20', '00:00:30', '00:00:40', '00:00:50'],
-                                        'text': [
-                                            '品牌的影响力正在不断增长',
-                                            '我们需要提高用户的品牌认知度',
-                                            '用户体验是我们产品的核心竞争力',
-                                            '创新是推动品牌向前发展的关键',
-                                            '我们的产品质量得到了用户的高度认可'
-                                        ]
-                                    })
-                                    sample_data.to_csv(sample_data_path, index=False)
-                                
-                                # 处理分析
-                                results, result_file = process_video_analysis(sample_data_path, "关键词分析", keywords=keywords)
-                                
-                                # 显示结果
-                                if results:
-                                    show_analysis_results(results, result_file)
+                                if os.path.exists(sample_data_path):
+                                    st.info("使用示例字幕数据进行分析")
+                                    video_path = sample_data_path
+                            
+                            # 如果没有视频路径，尝试使用示例
+                            if not video_path:
+                                st.error("未找到有效的视频路径")
+                                return
+                            
+                            # 处理分析
+                            results, result_file = process_video_analysis(video_path, "关键词分析", keywords=keywords)
+                            
+                            # 显示结果
+                            if results:
+                                show_analysis_results(results, result_file)
                 else:
                     st.warning("请输入至少一个关键词")
 
