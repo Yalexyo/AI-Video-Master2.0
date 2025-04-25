@@ -10,6 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import jieba
 import re
 from multiprocessing import Pool, cpu_count
+from src.config.settings import VIDEO_ANALYSIS_DIR
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -35,8 +36,10 @@ class VideoAnalyzer:
     def _ensure_directories(self):
         """确保必要的目录结构存在"""
         dirs = [
-            os.path.join('data', 'video_analysis', 'results'),
-            os.path.join('data', 'cache')
+            os.path.join('data', 'raw'),
+            os.path.join('data', 'processed'),
+            os.path.join('data', 'cache'),
+            os.path.join(VIDEO_ANALYSIS_DIR, 'results'),
         ]
         
         for dir_path in dirs:
@@ -420,26 +423,30 @@ class VideoAnalyzer:
             'is_error': True
         }]
     
-    def save_analysis_results(self, results: Dict[str, Any], output_file: Optional[str] = None) -> str:
+    def save_analysis_results(self, results: Dict, output_file: Optional[str] = None) -> str:
         """
-        保存分析结果
+        保存分析结果到文件
         
         参数:
             results: 分析结果字典
-            output_file: 输出文件路径，如果为None则生成默认文件名
+            output_file: 输出文件路径，如果为None则自动生成
             
         返回:
             保存的文件路径
         """
         try:
-            # 如果未指定输出文件，创建默认文件名
+            # 确定保存路径
             if output_file is None:
-                analysis_type = results.get('type', 'analysis').lower().replace(' ', '_')
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                output_file = os.path.join('data', 'video_analysis', 'results', f"{analysis_type}_{timestamp}.json")
-            
-            # 确保输出目录存在
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+                # 获取分析类型和时间戳
+                analysis_type = results.get('type', 'unknown')
+                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                
+                # 确保目录存在
+                output_dir = os.path.join(VIDEO_ANALYSIS_DIR, 'results')
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # 生成输出文件名
+                output_file = os.path.join(output_dir, f"{analysis_type}_{timestamp}.json")
             
             # 保存结果
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -447,7 +454,7 @@ class VideoAnalyzer:
             
             logger.info(f"分析结果已保存到: {output_file}")
             return output_file
-        
+            
         except Exception as e:
-            logger.error(f"保存分析结果出错: {str(e)}")
+            logger.error(f"保存分析结果失败: {str(e)}")
             return "" 

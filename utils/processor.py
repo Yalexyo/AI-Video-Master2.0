@@ -31,7 +31,8 @@ except ImportError as e:
 # 导入DashScope模块
 try:
     import dashscope
-    from dashscope.audio.asr.recognition import Recognition
+    # 导入录音文件识别API，而非实时语音识别API
+    from dashscope.audio.asr.transcription import Transcription
     DASHSCOPE_AVAILABLE = True
     logger.info("成功导入DashScope模块")
 except ImportError as e:
@@ -57,6 +58,23 @@ if not DASHSCOPE_AVAILABLE:
             self.status_code = 500
             self.message = "DashScope模块未安装"
             self.output = {}
+    
+    # 定义备用回调类
+    class RecognitionCallback:
+        def on_open(self):
+            pass
+        
+        def on_event(self, result):
+            pass
+            
+        def on_error(self, result):
+            pass
+            
+        def on_close(self):
+            pass
+            
+        def on_complete(self):
+            pass
 
 class VideoProcessor:
     """视频处理器类，处理视频文件的基本操作及预处理功能"""
@@ -100,7 +118,7 @@ class VideoProcessor:
         
         参数:
             video_path: 视频文件路径
-        
+            
         返回:
             包含视频信息的字典
         """
@@ -151,57 +169,50 @@ class VideoProcessor:
             logger.error(traceback.format_exc())
             return {}
     
-    def process_video_file(self, video_file: str, output_dir: Optional[str] = None, vocabulary_id: Optional[str] = None) -> str:
+    def process_video_file(self, video_file: str, vocabulary_id: str = None) -> str:
         """
-        处理视频文件，提取字幕并生成CSV文件
+        处理视频文件，提取字幕并保存为CSV文件
         
         参数:
-            video_file: 视频文件路径
-            output_dir: 输出目录，默认为data/processed
-            vocabulary_id: 热词表ID，用于优化识别
+            video_file: 视频文件路径或URL
+            vocabulary_id: 热词表ID（可选），用于语音识别中的热词支持
             
         返回:
-            处理后的CSV文件路径，如果处理失败则返回空字符串
+            CSV文件路径或空字符串（处理失败时）
         """
+        logger.info(f"开始处理视频文件: {video_file}")
+        
         try:
-            logger.info(f"开始处理视频文件: {video_file}")
+            # 从视频中提取字幕
+            subtitles = self._extract_subtitles_from_video(video_file, vocabulary_id)
             
-            # 获取视频文件名（不包括扩展名）
-            video_name = os.path.splitext(os.path.basename(video_file))[0]
-            
-            # 确定输出目录
-            if output_dir is None:
-                output_dir = os.path.join('data', 'processed')
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # 输出CSV文件路径
-            output_csv = os.path.join(output_dir, f"{video_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv")
-            
-            # 提取字幕
-            subtitles = self._extract_subtitles_from_video(video_file)
-            
-            # 如果字幕提取失败（返回空列表），则直接返回失败
+            # 如果提取失败（返回空列表），则直接返回空字符串
             if not subtitles:
-                logger.error(f"字幕提取失败，无法处理视频: {video_file}")
-                return "" # 返回空字符串表示处理失败
+                logger.error(f"视频文件语音识别失败，未能提取到字幕: {video_file}")
+                return ""
             
-            # 创建DataFrame并保存
-            df = pd.DataFrame(subtitles)
-            df.to_csv(output_csv, index=False, encoding='utf-8')
+            # 保存字幕数据到CSV文件
+            output_csv = self._save_subtitles_to_csv(video_file, subtitles)
+            
+            if not output_csv:
+                logger.error(f"保存字幕到CSV文件失败: {video_file}")
+                return ""
             
             logger.info(f"视频处理完成，字幕保存到: {output_csv}")
             return output_csv
         
         except Exception as e:
-            logger.error(f"处理视频文件出错: {str(e)}")
+            logger.exception(f"处理视频文件失败: {str(e)}")
             return ""
     
-    def _extract_subtitles_from_video(self, video_file: str) -> List[Dict[str, Any]]:
+    def _extract_subtitles_from_video(self, video_file: str, vocabulary_id: str = None) -> List[Dict[str, Any]]:
         """
         从视频中提取字幕数据，使用阿里云DashScope服务的Paraformer模型进行语音识别
+        支持直接使用OSS URL进行识别，无需下载到本地
         
         参数:
-            video_file: 视频文件路径
+            video_file: 视频文件路径或URL
+            vocabulary_id: 热词表ID（可选），用于语音识别中的热词支持
             
         返回:
             包含字幕信息的字典列表，每个字典包含开始时间、结束时间和文本内容
@@ -209,109 +220,124 @@ class VideoProcessor:
         logger.info(f"开始从视频中提取字幕: {video_file}")
         
         try:
-            # 检查文件是否存在
-            if not os.path.exists(video_file):
+            # 判断是否为OSS URL链接
+            is_url = video_file.startswith(('http://', 'https://'))
+            
+            # 如果不是URL且文件不存在，则返回空
+            if not is_url and not os.path.exists(video_file):
                 logger.error(f"视频文件不存在: {video_file}")
                 return []
             
             # 检查DashScope模块是否可用
             if not DASHSCOPE_AVAILABLE:
                 logger.error("DashScope模块不可用，请安装dashscope: pip install dashscope")
-                return self._fallback_subtitle_generation(video_file, error_type="module_missing")
+                return self._fallback_subtitle_generation(video_file)
             
             # 检查API Key是否已设置
             if not API_KEY:
                 logger.error("DashScope API Key未设置，请在环境变量中配置DASHSCOPE_API_KEY")
-                return self._fallback_subtitle_generation(video_file, error_type="api_key_missing")
-            
-            # 获取视频信息
-            video_info = self._get_video_info(video_file)
-            if not video_info:
-                logger.error(f"无法获取视频信息: {video_file}")
-                return self._fallback_subtitle_generation(video_file, error_type="video_info_error")
-            
-            # 记录视频信息
-            logger.info(f"视频信息: 时长={video_info.get('duration', 'unknown')}秒, "
-                       f"格式={video_info.get('format', 'unknown')}, "
-                       f"分辨率={video_info.get('width', 'unknown')}x{video_info.get('height', 'unknown')}")
-            
-            # 检查视频时长是否在限制范围内（DashScope限制12小时）
-            if video_info.get('duration', 0) > 43200:  # 12小时 = 43200秒
-                logger.error(f"视频时长超过限制(12小时): {video_info.get('duration')}秒")
-                return self._fallback_subtitle_generation(video_file, error_type="duration_exceeded")
-            
-            # 预处理视频文件，提取音频并转换为opus格式
-            # 根据阿里云最佳实践，预处理可以显著提高识别效率
-            preprocessed_audio = self._preprocess_video_file(video_file)
-            if not preprocessed_audio:
-                logger.error(f"视频预处理失败: {video_file}")
-                return self._fallback_subtitle_generation(video_file, error_type="preprocessing_failed")
-            
-            logger.info(f"视频已预处理，音频文件: {preprocessed_audio}")
-            
-            # 上传预处理后的音频文件到可访问的URL
-            file_url = self._upload_to_accessible_url(preprocessed_audio)
-            if not file_url:
-                logger.error(f"无法创建可访问的URL: {preprocessed_audio}")
-                return self._fallback_subtitle_generation(video_file, error_type="upload_failed")
-            
-            logger.info(f"音频文件已上传到: {file_url}")
+                return self._fallback_subtitle_generation(video_file)
             
             # 设置API密钥
             dashscope.api_key = API_KEY
             
             # 设置Paraformer模型
-            # 指定模型版本，PARAFORMER_MODEL_VERSION在配置文件中设置，例如："v2"
             model_id = f"paraformer-{PARAFORMER_MODEL_VERSION}" if PARAFORMER_MODEL_VERSION else "paraformer-v2"
             
-            # 构建音频参数
-            audio_params = {
-                "url": file_url,
-                "format": "opus",  # 预处理后的音频格式为opus
-                "sample_rate": 16000  # 采样率16kHz
-            }
-            
             # 构建API调用参数
-            api_params = {}
-            if SUBTITLE_MODEL:
-                api_params["model"] = SUBTITLE_MODEL
+            api_kwargs = {}
+            
+            # 添加基础音频参数
+            api_kwargs['format'] = self._get_audio_format(video_file)
+            api_kwargs['sample_rate'] = 16000
+            
+            # 添加额外参数
             if SUBTITLE_LANGUAGE and SUBTITLE_LANGUAGE != "auto":
-                api_params["language"] = SUBTITLE_LANGUAGE
+                api_kwargs['language'] = SUBTITLE_LANGUAGE
             
             # 添加热词配置（如果已设置）
-            if HOT_WORDS and isinstance(HOT_WORDS, list) and len(HOT_WORDS) > 0:
-                logger.info(f"应用热词配置: {', '.join(HOT_WORDS[:5])}{'...' if len(HOT_WORDS) > 5 else ''}")
-                api_params["hot_words"] = HOT_WORDS
+            if vocabulary_id and isinstance(vocabulary_id, str) and len(vocabulary_id) > 0:
+                logger.info(f"应用热词配置: {vocabulary_id[:5]}{'...' if len(vocabulary_id) > 5 else ''}")
+                api_kwargs['hot_words'] = vocabulary_id
             
-            # 记录API调用参数
-            logger.info(f"DashScope Paraformer API调用参数: model_id={model_id}, audio={audio_params}, params={api_params}")
+            # 如果是本地文件，需要先上传到可访问的URL
+            if not is_url:
+                # 首先预处理提取音频文件
+                audio_file = self._preprocess_video_file(video_file)
+                if not audio_file:
+                    logger.error(f"预处理视频失败，无法提取音频: {video_file}")
+                    return self._fallback_subtitle_generation(video_file)
+                
+                file_url = self._upload_to_accessible_url(audio_file)
+                if not file_url:
+                    logger.error(f"无法创建可访问的URL: {audio_file}")
+                    return self._fallback_subtitle_generation(video_file)
+                
+                logger.info(f"音频文件已上传到: {file_url}")
+                video_url = file_url
+            else:
+                # 直接使用现有URL
+                video_url = video_file
+                logger.info(f"使用OSS URL: {video_url}")
+            
+            # 修复格式化问题，对字典使用repr()避免嵌套花括号问题
+            logger.info(f"DashScope Paraformer API调用参数: model_id={model_id}, file_urls=[{repr(video_url)}], kwargs={repr(api_kwargs)}")
             
             # 调用DashScope API
             start_time = time.time()
             try:
-                # 使用静态方法调用Recognition API，而不是实例方法
-                response = dashscope.audio.asr.recognition.Recognition.call(
+                # 使用正确的API调用方式，根据API文档传递参数
+                response = dashscope.audio.asr.transcription.Transcription.call(
                     model=model_id,
-                    audio=audio_params,
-                    timeout=API_TIMEOUT,
-                    **api_params
+                    file_urls=[video_url],  # API要求提供file_urls列表
+                    **api_kwargs  # 直接传递所有参数，而不是通过params字典
                 )
                 
                 api_time = time.time() - start_time
                 logger.info(f"DashScope API调用完成，耗时: {api_time:.2f}秒")
                 
-                # 记录API响应状态
-                logger.info(f"DashScope API响应状态: {response.status_code}, 消息: {response.message}")
-                
                 # 处理API返回结果
-                if response.status_code == 200 and response.output and 'sentences' in response.output:
-                    subtitles = self._parse_paraformer_response(response)
+                if response.status_code == 200 and response.output and 'results' in response.output:
+                    # 提取结果
+                    results = response.output['results']
+                    if not results or len(results) == 0:
+                        logger.error("识别结果为空")
+                        return self._fallback_subtitle_generation(video_file)
+                    
+                    # 处理识别结果 - 转换为字幕格式
+                    subtitles = []
+                    file_result = results[0]  # 取第一个文件的结果
+                    
+                    if 'sentences' in file_result:
+                        for i, sentence in enumerate(file_result['sentences']):
+                            # 计算开始和结束时间（毫秒转秒）
+                            start_time = sentence.get('begin_time', 0) / 1000 if 'begin_time' in sentence else 0
+                            end_time = sentence.get('end_time', 0) / 1000 if 'end_time' in sentence else 0
+                            
+                            # 格式化时间
+                            start_formatted = self._format_time(start_time)
+                            end_formatted = self._format_time(end_time)
+                            
+                            subtitles.append({
+                                "index": i,
+                                "start": start_time,
+                                "end": end_time,
+                                "start_formatted": start_formatted,
+                                "end_formatted": end_formatted,
+                                "timestamp": start_formatted,
+                                "duration": end_time - start_time,
+                                "text": sentence.get('text', '')
+                            })
+                    
                     logger.info(f"成功从视频中提取了{len(subtitles)}条字幕")
                     
                     # 清理临时文件
-                    if os.path.exists(preprocessed_audio):
-                        os.remove(preprocessed_audio)
-                        logger.info(f"已清理临时音频文件: {preprocessed_audio}")
+                    if not is_url and os.path.exists(audio_file):
+                        try:
+                            os.remove(audio_file)
+                            logger.info(f"已清理临时音频文件: {audio_file}")
+                        except Exception as e:
+                            logger.warning(f"清理临时音频文件失败: {e}")
                     
                     return subtitles
                 else:
@@ -321,32 +347,63 @@ class VideoProcessor:
                     error_detail = response.output.get('error', {}) if hasattr(response, 'output') and response.output else {}
                     
                     logger.error(f"Paraformer API调用失败: 状态码={error_code}, 消息={error_msg}, 详情={error_detail}")
-                    
-                    # 清理临时文件
-                    if os.path.exists(preprocessed_audio):
-                        os.remove(preprocessed_audio)
-                        logger.info(f"已清理临时音频文件: {preprocessed_audio}")
-                    
-                    return self._fallback_subtitle_generation(video_file, error_type="api_error", 
-                                                             error_detail=f"{error_code}: {error_msg}")
+                    return self._fallback_subtitle_generation(video_file)
+            
             except Exception as api_error:
                 # 捕获API调用异常
                 api_time = time.time() - start_time
-                logger.exception(f"DashScope API调用异常，耗时: {api_time:.2f}秒, 错误: {str(api_error)}")
+                error_msg = str(api_error)
+                logger.exception(f"DashScope API调用异常，耗时: {api_time:.2f}秒, 错误: {error_msg}")
                 
-                # 清理临时文件
-                if os.path.exists(preprocessed_audio):
-                    os.remove(preprocessed_audio)
-                    logger.info(f"已清理临时音频文件: {preprocessed_audio}")
+                # 分析错误类型，提供更有用的错误信息
+                if "file_urls" in error_msg:
+                    logger.error("DashScope API参数错误: file_urls参数不正确。请检查API文档以获取最新参数格式。")
+                elif "permissions" in error_msg.lower() or "denied" in error_msg.lower():
+                    logger.error("DashScope API访问被拒绝，请检查API密钥是否有效。")
+                elif "not found" in error_msg.lower():
+                    logger.error(f"找不到指定的模型: {model_id}，请检查模型名称是否正确。")
+                elif "timeout" in error_msg.lower():
+                    logger.error("DashScope API调用超时，请检查网络连接或稍后重试。")
+                elif "format" in error_msg.lower():
+                    logger.error(f"音频格式不受支持，当前格式: {self._get_audio_format(video_file)}。请转换为受支持的格式。")
+                elif "local file" in error_msg.lower() or "url" in error_msg.lower():
+                    logger.error("DashScope API不支持直接处理本地文件URL，请配置OSS或其他云存储。")
                 
-                return self._fallback_subtitle_generation(video_file, error_type="api_exception", 
-                                                         error_detail=str(api_error))
+                return self._fallback_subtitle_generation(video_file)
+            finally:
+                # 确保清理临时文件，即使发生异常
+                if not is_url and 'audio_file' in locals() and audio_file and os.path.exists(audio_file):
+                    try:
+                        os.remove(audio_file)
+                        logger.info(f"已清理临时音频文件: {audio_file}")
+                    except Exception as e:
+                        logger.warning(f"清理临时音频文件失败: {e}")
         
         except Exception as e:
             # 捕获所有其他异常
             logger.exception(f"提取字幕过程中发生未预期的错误: {str(e)}")
-            return self._fallback_subtitle_generation(video_file, error_type="unexpected_error", 
-                                                     error_detail=str(e))
+            return self._fallback_subtitle_generation(video_file)
+    
+    def _fallback_subtitle_generation(self, video_file: str) -> List[Dict[str, Any]]:
+        """
+        回退方案：当主要字幕提取方法失败时使用
+        
+        参数:
+            video_file: 视频文件路径
+            
+        返回:
+            字幕信息列表，失败时返回空列表
+        """
+        try:
+            logger.warning(f"使用回退方案提取字幕: {video_file}")
+            
+            # 完全失败的情况，不再生成占位符数据
+            logger.error(f"回退字幕提取也失败了: {video_file}")
+            return []
+            
+        except Exception as e:
+            logger.exception(f"回退字幕提取失败: {str(e)}")
+            return []
     
     def _preprocess_video_file(self, video_file: str) -> Optional[str]:
         """
@@ -581,70 +638,17 @@ class VideoProcessor:
             shutil.copy2(file_path, temp_file_path)
             
             # 创建文件URL，对于真实应用，这应该是一个可以通过公网访问的URL
-            # 这里提供了file://协议作为临时解决方案，实际应用中可能需要本地服务器
-            file_url = f"file://{os.path.abspath(temp_file_path)}"
+            # 改为返回直接文件路径而非file://协议，作为备用方案尝试
+            # 新版本dashscope可能支持直接读取本地文件
+            file_url = os.path.abspath(temp_file_path)
             
-            logger.info(f"创建本地文件URL: {file_url}")
-            
-            # 输出警告，提醒用户这可能不适用于生产环境
-            logger.warning("注意：使用本地文件URL可能无法被DashScope API处理，建议配置OSS或其他云存储")
+            logger.info(f"创建本地文件路径: {file_url}")
+            logger.warning("注意：在生产环境中应配置OSS或其他云存储以获得更可靠的音频识别")
             
             return file_url
         except Exception as e:
             logger.error(f"创建本地文件URL出错: {str(e)}")
             return None
-    
-    def _fallback_subtitle_generation(self, video_file: str, error_type: str = "unknown", 
-                                     error_detail: str = "") -> List[Dict[str, Any]]:
-        """
-        当语音识别失败或DashScope不可用时，记录详细错误信息并返回空列表。
-        
-        参数:
-            video_file: 视频文件路径
-            error_type: 错误类型
-            error_detail: 错误详细信息
-            
-        返回:
-            空列表，表示没有生成字幕数据。
-        """
-        # 错误类型说明
-        error_descriptions = {
-            "module_missing": "DashScope模块未安装",
-            "api_key_missing": "API Key未配置",
-            "video_info_error": "无法获取视频信息",
-            "duration_exceeded": "视频时长超过限制",
-            "upload_failed": "无法上传视频到可访问URL",
-            "api_error": "API调用返回错误",
-            "api_exception": "API调用过程中发生异常",
-            "unexpected_error": "处理过程中发生未预期的错误",
-            "unknown": "未知错误"
-        }
-        
-        error_desc = error_descriptions.get(error_type, "未知错误")
-        
-        # 记录详细错误信息
-        logger.error(f"视频语音识别失败: {video_file}")
-        logger.error(f"错误类型: {error_type} - {error_desc}")
-        if error_detail:
-            logger.error(f"错误详情: {error_detail}")
-        
-        # 建议解决方案
-        solutions = {
-            "module_missing": "请运行 'pip install dashscope' 安装DashScope模块",
-            "api_key_missing": "请在.env文件或环境变量中设置DASHSCOPE_API_KEY",
-            "video_info_error": "请检查视频文件是否损坏或格式不受支持",
-            "duration_exceeded": "请将视频分割为较短片段，每段不超过12小时",
-            "upload_failed": "请检查OSS配置或网络连接",
-            "api_error": "请检查API请求参数是否正确，可能需调整视频格式",
-            "api_exception": "请检查网络连接和API Key是否有效",
-            "unexpected_error": "请检查日志获取详细错误信息"
-        }
-        
-        solution = solutions.get(error_type, "请检查日志获取详细错误信息")
-        logger.info(f"建议解决方案: {solution}")
-        
-        # 不再生成模拟数据，直接返回空列表表示失败
-        return []
     
     def _format_time(self, seconds: float) -> str:
         """
@@ -902,7 +906,7 @@ class VideoProcessor:
                 "text": text
             })
         
-        return subtitles
+        return subtitles 
     
     def _get_audio_format(self, file_path: str) -> str:
         """
@@ -944,3 +948,58 @@ class VideoProcessor:
         else:
             logger.warning(f"未知的文件格式: {ext}，使用默认格式'auto'")
             return 'auto' 
+
+    def _save_subtitles_to_csv(self, video_file: str, subtitles: List[Dict[str, Any]]) -> str:
+        """
+        将字幕数据保存为CSV文件
+        
+        参数:
+            video_file: 视频文件路径或URL
+            subtitles: 字幕数据列表
+            
+        返回:
+            保存的CSV文件路径，如果保存失败则返回空字符串
+        """
+        try:
+            # 确定视频文件名
+            if video_file.startswith(('http://', 'https://')):
+                # 从URL中提取文件名
+                video_filename = os.path.basename(video_file.split('?')[0])
+            else:
+                video_filename = os.path.basename(video_file)
+            
+            video_name, _ = os.path.splitext(video_filename)
+            
+            # 确定输出目录
+            output_dir = os.path.join(settings.OUTPUT_DIR, 'subtitles')
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 生成输出文件名（添加时间戳）
+            timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
+            output_filename = f"{video_name}_{timestamp}.csv"
+            output_csv = os.path.join(output_dir, output_filename)
+            
+            # 将字幕数据转换为DataFrame
+            data = []
+            for subtitle in subtitles:
+                data.append({
+                    'index': subtitle.get('index', 0),
+                    'start': subtitle.get('start', 0),
+                    'end': subtitle.get('end', 0),
+                    'start_formatted': subtitle.get('start_formatted', '00:00:00'),
+                    'end_formatted': subtitle.get('end_formatted', '00:00:00'),
+                    'timestamp': subtitle.get('timestamp', '00:00:00'),
+                    'duration': subtitle.get('duration', 0),
+                    'text': subtitle.get('text', '')
+                })
+            
+            # 保存为CSV
+            df = pd.DataFrame(data)
+            df.to_csv(output_csv, index=False, encoding='utf-8')
+            
+            logger.info(f"字幕数据成功保存到CSV: {output_csv}")
+            return output_csv
+        
+        except Exception as e:
+            logger.exception(f"保存字幕到CSV失败: {str(e)}")
+            return "" 

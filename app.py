@@ -5,6 +5,10 @@ from datetime import datetime
 import sys
 from dotenv import load_dotenv
 from src.ui_elements.simple_nav import create_sidebar_navigation
+from pathlib import Path
+
+# 从settings.py导入所需配置
+from src.config.settings import VIDEO_ANALYSIS_DIR
 
 # 确保所有必要的目录结构存在
 os.makedirs('logs', exist_ok=True)
@@ -13,7 +17,7 @@ os.makedirs(os.path.join('data', 'processed'), exist_ok=True)
 os.makedirs(os.path.join('data', 'cache'), exist_ok=True)
 os.makedirs(os.path.join('data', 'dimensions'), exist_ok=True)
 os.makedirs(os.path.join('data', 'hotwords'), exist_ok=True)
-os.makedirs(os.path.join('data', 'video_analysis', 'results'), exist_ok=True)
+os.makedirs(os.path.join(VIDEO_ANALYSIS_DIR, 'results'), exist_ok=True)
 os.makedirs(os.path.join('data', 'temp'), exist_ok=True)
 
 # 设置日志配置

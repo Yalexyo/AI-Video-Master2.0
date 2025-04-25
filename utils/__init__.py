@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
 AI视频大师工具包
 
@@ -10,5 +12,6 @@ AI视频大师工具包
 
 from utils.analyzer import VideoAnalyzer
 from utils.processor import VideoProcessor
+from . import video_utils
 
-__all__ = ['VideoAnalyzer', 'VideoProcessor'] 
+__all__ = ['VideoAnalyzer', 'VideoProcessor', 'video_utils'] 
