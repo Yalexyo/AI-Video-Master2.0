@@ -215,54 +215,19 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
             # 处理视频文件，传入热词表ID
             output_csv = processor.process_video_file(video_path, vocabulary_id=vocabulary_id)
             
-            # 如果处理成功，读取CSV文件
-            if output_csv and os.path.exists(output_csv):
-                df = pd.read_csv(output_csv)
-                status_text.text(f"视频处理完成，识别了 {len(df)} 条句子")
-            else:
-                # 处理失败，创建一个示例CSV文件
-                status_text.text("视频处理失败，使用示例数据")
-                
-                # 创建样本数据
-                sample_data = pd.DataFrame({
-                    'timestamp': ['00:00:10', '00:00:20', '00:00:30', '00:00:40', '00:00:50'],
-                    'text': [
-                        '品牌的影响力正在不断增长',
-                        '我们需要提高用户的品牌认知度',
-                        '用户体验是我们产品的核心竞争力',
-                        '创新是推动品牌向前发展的关键',
-                        '我们的产品质量得到了用户的高度认可'
-                    ]
-                })
-                
-                # 创建临时CSV文件
-                output_csv = os.path.join("data", "temp", "sample_subtitles.csv")
-                sample_data.to_csv(output_csv, index=False)
-                df = sample_data
-        except ImportError:
-            # VideoProcessor不可用，使用原有模拟逻辑
-            status_text.text("VideoProcessor不可用，使用模拟数据")
+            # 检查处理是否成功，如果output_csv为空或文件不存在，则表示失败
+            if not output_csv or not os.path.exists(output_csv):
+                status_text.error("视频语音识别处理失败，无法进行后续分析。请检查日志获取详细错误信息。")
+                return None, None # 返回None表示处理失败
             
-            # 读取CSV文件（如果存在）或创建示例数据
-            if os.path.exists(file) and file.endswith('.csv'):
-                df = pd.read_csv(file)
-            else:
-                # 创建样本数据
-                sample_data = pd.DataFrame({
-                    'timestamp': ['00:00:10', '00:00:20', '00:00:30', '00:00:40', '00:00:50'],
-                    'text': [
-                        '品牌的影响力正在不断增长',
-                        '我们需要提高用户的品牌认知度',
-                        '用户体验是我们产品的核心竞争力',
-                        '创新是推动品牌向前发展的关键',
-                        '我们的产品质量得到了用户的高度认可'
-                    ]
-                })
+            # 读取CSV文件
+            df = pd.read_csv(output_csv)
+            status_text.text(f"视频处理完成，识别了 {len(df)} 条句子")
                 
-                # 创建临时CSV文件
-                output_csv = os.path.join("data", "temp", "sample_subtitles.csv")
-                sample_data.to_csv(output_csv, index=False)
-                df = sample_data
+        except ImportError:
+            # VideoProcessor不可用
+            status_text.error("核心处理模块(VideoProcessor)导入失败，无法处理视频。")
+            return None, None
         
         # 更新进度到50%
         progress_bar.progress(0.5)
@@ -323,6 +288,13 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
         # 完成处理
         progress_bar.progress(1.0)
         status_text.text("分析完成！")
+        
+        # 检查是否有错误结果
+        if len(results['matches']) == 1 and results['matches'][0].get('is_error', False):
+            error_match = results['matches'][0]
+            st.error(error_match['text'])
+            st.info("分析失败。请确保您的API配置正确，并检查视频文件是否有效。您可以尝试使用不同的视频文件或稍后再试。")
+            return
         
         return results, result_file
     
@@ -428,6 +400,13 @@ def show_analysis_results(results, result_file):
     
     st.markdown("## 分析结果")
     
+    # 检查是否有错误结果
+    if len(results['matches']) == 1 and results['matches'][0].get('is_error', False):
+        error_match = results['matches'][0]
+        st.error(error_match['text'])
+        st.info("分析失败。请确保您的API配置正确，并检查视频文件是否有效。您可以尝试使用不同的视频文件或稍后再试。")
+        return
+    
     # 显示视频信息（如果有）
     if 'video_info' in results:
         video_info = results['video_info']
@@ -510,17 +489,25 @@ def show_analysis_results(results, result_file):
 
 def show():
     """显示视频分析页面"""
-    # 设置自定义主题
+    # 设置主题
     set_custom_theme()
     
-    # 使用通用导航组件
+    # 创建侧边栏导航
     create_sidebar_navigation("视频分析")
     
-    # 页面主体内容
-    st.title("视频分析")
+    # 加载维度结构
+    dimensions = load_dimensions()
     
-    # 不再使用选项卡
-    # upload_tab, analysis_tab = st.tabs(["上传视频", "分析设置"])
+    # 页面标题
+    st.title("🎬 视频分析")
+    st.write("上传视频或提供视频链接，进行语音和内容分析")
+    
+    # 分析类型选择
+    analysis_type = st.radio(
+        "选择分析类型:", 
+        ["维度分析", "关键词分析"],
+        horizontal=True
+    )
     
     # 上传视频部分
     st.header("上传视频")

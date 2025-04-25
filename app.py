@@ -88,7 +88,7 @@ def main():
             window.location.href = "/video_analysis"
         </script>
         """, unsafe_allow_html=True)
-        
+
         # 显示备用链接，以防自动跳转失败
         st.info("正在跳转到视频分析页面，如果没有自动跳转，请点击下方按钮")
         

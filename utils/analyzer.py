@@ -375,7 +375,7 @@ class VideoAnalyzer:
     
     def _fallback_dimension_matching(self, video_data: pd.DataFrame, dimensions: Dict[str, Any], threshold: float = 0.5) -> List[Dict[str, Any]]:
         """
-        备用的维度匹配逻辑，当语义匹配失败时使用
+        维度分析失败时返回错误提示信息
         
         参数:
             video_data: 视频文本数据DataFrame
@@ -383,55 +383,23 @@ class VideoAnalyzer:
             threshold: 匹配阈值
             
         返回:
-            匹配结果列表
+            包含错误信息的匹配结果列表
         """
-        matches = []
+        logger.error("维度分析失败：无法加载语义模型或处理分析")
         
-        # 获取一级维度
-        level1_dims = dimensions.get('level1', [])
-        
-        # 处理每条记录
-        for _, row in video_data.iterrows():
-            text = row.get('text', '')
-            if not text:
-                continue
-            
-            for dim1 in level1_dims:
-                # 模拟匹配计算，基于简单的字符串包含关系
-                contains_words = any(word in text for word in dim1.split())
-                
-                if contains_words:
-                    # 模拟匹配分数
-                    score = 0.7 + np.random.random() * 0.3
-                    
-                    # 尝试匹配二级维度
-                    level2_dims = dimensions.get('level2', {}).get(dim1, [])
-                    matched_l2 = ""
-                    
-                    for dim2 in level2_dims:
-                        contains_words_l2 = any(word in text for word in dim2.split())
-                        
-                        if contains_words_l2:
-                            # 找到匹配的二级维度
-                            matched_l2 = dim2
-                            score = 0.7 + np.random.random() * 0.3  # 更新分数
-                            break
-                    
-                    # 添加匹配结果
-                    matches.append({
-                        'dimension_level1': dim1,
-                        'dimension_level2': matched_l2,
-                        'timestamp': row.get('timestamp', '00:00:00'),
-                        'text': text,
-                        'score': float(score)
-                    })
-        
-        logger.info(f"备用维度匹配完成，匹配 {len(matches)} 条记录")
-        return matches
+        # 返回单条错误信息记录
+        return [{
+            'dimension_level1': '错误',
+            'dimension_level2': '',
+            'timestamp': '00:00:00',
+            'text': '维度分析失败。可能的原因：1) 语义模型加载失败；2) 内存不足；3) 文本编码过程出错。请尝试重新加载页面或联系管理员。',
+            'score': 0.0,
+            'is_error': True
+        }]
     
     def _fallback_keyword_matching(self, video_data: pd.DataFrame, keywords: List[str], threshold: float = 0.5) -> List[Dict[str, Any]]:
         """
-        备用的关键词匹配逻辑，当语义匹配失败时使用
+        关键词分析失败时返回错误提示信息
         
         参数:
             video_data: 视频文本数据DataFrame
@@ -439,33 +407,18 @@ class VideoAnalyzer:
             threshold: 匹配阈值
             
         返回:
-            匹配结果列表
+            包含错误信息的匹配结果列表
         """
-        matches = []
+        logger.error("关键词分析失败：无法加载语义模型或处理分析")
         
-        # 处理每条记录
-        for _, row in video_data.iterrows():
-            text = row.get('text', '')
-            if not text:
-                continue
-            
-            # 对每个关键词进行匹配
-            for keyword in keywords:
-                # 简单的包含匹配
-                if keyword.lower() in text.lower():
-                    # 模拟匹配分数
-                    score = 0.7 + np.random.random() * 0.3
-                    
-                    # 添加匹配结果
-                    matches.append({
-                        'keyword': keyword,
-                        'timestamp': row.get('timestamp', '00:00:00'),
-                        'text': text,
-                        'score': float(score)
-                    })
-        
-        logger.info(f"备用关键词匹配完成，匹配 {len(matches)} 条记录")
-        return matches
+        # 返回单条错误信息记录
+        return [{
+            'keyword': '错误',
+            'timestamp': '00:00:00',
+            'text': '关键词分析失败。可能的原因：1) 语义模型加载失败；2) 内存不足；3) 文本编码过程出错。请尝试重新加载页面或联系管理员。',
+            'score': 0.0,
+            'is_error': True
+        }]
     
     def save_analysis_results(self, results: Dict[str, Any], output_file: Optional[str] = None) -> str:
         """

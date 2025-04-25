@@ -3,6 +3,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
 import numpy as np
+from dataclasses import dataclass, field
+from datetime import datetime
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -247,3 +249,76 @@ class VideoAnalysisModel:
         except Exception as e:
             logger.error(f"分析关键词匹配出错: {str(e)}")
             return segments
+
+@dataclass
+class HotWord:
+    """热词数据结构"""
+    word: str  # 词语
+    weight: float = 1.0  # 权重
+    category: str = ""  # 分类
+    description: str = ""  # 描述
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class Dimension:
+    """维度数据结构"""
+    id: str  # 唯一标识
+    name: str  # 维度名称
+    weight: float = 1.0  # 权重
+    parent_id: Optional[str] = None  # 父级ID，如果是顶级则为None
+    description: str = ""  # 描述
+    sub_dimensions: List['Dimension'] = field(default_factory=list)  # 子维度列表
+
+
+@dataclass
+class VideoInfo:
+    """视频信息数据结构"""
+    video_id: str  # 视频唯一标识符
+    filename: str  # 文件名
+    file_path: str  # 本地文件路径或URL
+    file_size: int  # 文件大小(字节)
+    duration: float  # 视频时长(秒)
+    width: int  # 宽度(像素)
+    height: int  # 高度(像素)
+    fps: float  # 帧率
+    format: str  # 视频格式
+    has_audio: bool  # 是否包含音轨
+    upload_time: datetime = field(default_factory=datetime.now)  # 上传时间
+    oss_key: Optional[str] = None  # 如存储在云端，对应的OSS键值
+    is_cloud_stored: bool = False  # 是否存储在云端
+    status: str = "pending"  # 视频状态: pending, processing, completed, error
+    error_message: Optional[str] = None  # 错误信息
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
+    
+    @property
+    def resolution(self) -> str:
+        """返回视频分辨率字符串"""
+        return f"{self.width}x{self.height}"
+
+
+@dataclass
+class AnalysisResult:
+    """视频分析结果数据结构"""
+    video_id: str  # 关联的视频ID
+    timestamp: float  # 分析时间点(秒)
+    frame_num: int  # 帧序号
+    content: Dict[str, Any]  # 分析内容
+    confidence: float = 0.0  # 分析置信度
+    dimension_matches: List[str] = field(default_factory=list)  # 匹配的维度ID列表
+    hotword_matches: List[str] = field(default_factory=list)  # 匹配的热词列表
+
+
+@dataclass
+class ProcessingTask:
+    """视频处理任务数据结构"""
+    task_id: str  # 任务ID
+    video_id: str  # 视频ID
+    status: str  # 状态: pending, running, completed, error
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    progress: float = 0.0  # 进度百分比
+    steps_completed: List[str] = field(default_factory=list)  # 已完成的步骤
+    current_step: Optional[str] = None  # 当前进行的步骤
+    error_message: Optional[str] = None  # 错误信息
+    result: Dict[str, Any] = field(default_factory=dict)  # 处理结果

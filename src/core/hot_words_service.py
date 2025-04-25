@@ -525,6 +525,129 @@ class HotWordsService:
         logger.warning(f"热词不存在: {word}")
         return False
 
+    def upload_hotwords_to_cloud(self, category_name):
+        """
+        将热词表上传到阿里云，获取vocabulary_id
+        
+        参数:
+            category_name: 热词分类名称
+            
+        返回:
+            成功返回vocabulary_id，失败返回None
+        """
+        try:
+            # 加载热词数据
+            hotwords_data = self.load_hotwords()
+            
+            # 检查分类是否存在
+            if category_name not in hotwords_data['categories']:
+                logger.error(f"上传热词表失败：分类不存在: {category_name}")
+                return None
+            
+            # 获取分类下的热词列表
+            hotwords = hotwords_data['categories'][category_name]
+            
+            # 如果热词列表为空，返回失败
+            if not hotwords:
+                logger.warning(f"上传热词表失败：分类 {category_name} 下没有热词")
+                return None
+            
+            # 检查是否已经有vocabulary_id
+            existing_id = hotwords_data.get('vocabulary_ids', {}).get(category_name)
+            if existing_id:
+                # 检查云端是否存在该vocabulary_id
+                if self.check_vocabulary_exists(existing_id):
+                    logger.info(f"热词表已存在于云端: {existing_id}")
+                    return existing_id
+            
+            # 准备热词表数据，每行一个热词
+            vocabulary = "\n".join(hotwords)
+            
+            # 生成名称
+            name = f"{category_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
+            # 上传热词表到阿里云
+            vocabulary_id = self.create_cloud_vocabulary(
+                vocabulary=vocabulary,
+                name=name,
+                target_model='paraformer-v2'  # 指定目标模型
+            )
+            
+            if vocabulary_id:
+                # 保存vocabulary_id到本地记录
+                self._add_vocabulary_to_local_record(category_name, vocabulary_id)
+                logger.info(f"成功上传热词表到云端: {category_name} -> {vocabulary_id}")
+                return vocabulary_id
+            else:
+                logger.error(f"上传热词表失败: {category_name}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"上传热词表出错: {str(e)}")
+            return None
+    
+    def check_vocabulary_exists(self, vocabulary_id):
+        """
+        检查热词表是否存在于云端
+        
+        参数:
+            vocabulary_id: 热词表ID
+            
+        返回:
+            存在返回True，不存在返回False
+        """
+        try:
+            vocabulary_info = self.query_vocabulary(vocabulary_id)
+            return vocabulary_info is not None
+        except Exception as e:
+            logger.error(f"检查热词表存在性出错: {str(e)}")
+            return False
+    
+    def get_vocabulary_id(self, category_name):
+        """
+        获取分类对应的热词表ID，如果没有则上传创建
+        
+        参数:
+            category_name: 分类名称
+            
+        返回:
+            热词表ID，如果获取失败返回None
+        """
+        # 加载热词数据
+        hotwords_data = self.load_hotwords()
+        
+        # 检查是否有记录的vocabulary_id
+        vocabulary_id = hotwords_data.get('vocabulary_ids', {}).get(category_name)
+        
+        # 如果有记录的ID且在云端存在，直接返回
+        if vocabulary_id and self.check_vocabulary_exists(vocabulary_id):
+            return vocabulary_id
+        
+        # 否则上传创建新的热词表
+        return self.upload_hotwords_to_cloud(category_name)
+    
+    def get_all_category_vocabulary_ids(self):
+        """
+        获取所有分类的热词表ID
+        
+        返回:
+            分类名称到vocabulary_id的映射字典
+        """
+        # 加载热词数据
+        hotwords_data = self.load_hotwords()
+        
+        # 获取所有分类
+        categories = list(hotwords_data.get('categories', {}).keys())
+        result = {}
+        
+        # 确保每个分类都有vocabulary_id
+        for category in categories:
+            vocabulary_id = self.get_vocabulary_id(category)
+            if vocabulary_id:
+                result[category] = vocabulary_id
+        
+        return result
+
 # 单例模式
 _service_instance = None
 

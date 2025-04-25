@@ -12,15 +12,51 @@ import urllib.parse
 from pathlib import Path
 import asyncio
 import nest_asyncio
-from dashscope.audio.asr.transcription import Transcription
-from dashscope.api_entities.api_response import ApiResponse
 import time
+import subprocess
+import cv2
+
+# 配置日志
+logger = logging.getLogger(__name__)
+
+# 导入OSS模块，如果可用
+try:
+    import oss2
+    OSS_AVAILABLE = True
+    logger.info("成功导入阿里云OSS模块")
+except ImportError as e:
+    OSS_AVAILABLE = False
+    logger.warning(f"无法导入阿里云OSS模块: {str(e)}")
+
+# 导入DashScope模块
+try:
+    import dashscope
+    from dashscope.audio.asr.recognition import Recognition
+    DASHSCOPE_AVAILABLE = True
+    logger.info("成功导入DashScope模块")
+except ImportError as e:
+    DASHSCOPE_AVAILABLE = False
+    logger.warning(f"无法导入DashScope模块: {str(e)}")
 
 # 使用nest_asyncio解决jupyter等环境中的asyncio循环问题
 nest_asyncio.apply()
 
-# 配置日志
-logger = logging.getLogger(__name__)
+# 导入配置
+from src.config.settings import (
+    OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME, 
+    OSS_ENDPOINT, OSS_UPLOAD_DIR, OSS_PUBLIC_URL_TEMPLATE,
+    ENABLE_OSS, VIDEO_TEMP_DIR, API_KEY, PARAFORMER_MODEL_VERSION,
+    SUBTITLE_MODEL, SUBTITLE_LANGUAGE, HOT_WORDS, API_TIMEOUT
+)
+
+# 如果DashScope模块不可用，定义备用类
+if not DASHSCOPE_AVAILABLE:
+    # 定义备用API响应类
+    class DashscopeResponse:
+        def __init__(self):
+            self.status_code = 500
+            self.message = "DashScope模块未安装"
+            self.output = {}
 
 class VideoProcessor:
     """视频处理器类，处理视频文件的基本操作及预处理功能"""
@@ -33,7 +69,11 @@ class VideoProcessor:
             config: 配置字典，包含处理参数
         """
         self.config = config or {}
-        self.transcription = Transcription()
+        # 不在初始化时创建Recognition实例，而是在需要时创建
+        
+        if not DASHSCOPE_AVAILABLE:
+            logger.warning("DashScope模块不可用，语音识别功能将使用备用方案")
+            
         logger.info("视频处理器初始化完成")
         
         # 确保输出目录存在
@@ -54,6 +94,63 @@ class VideoProcessor:
                 os.makedirs(dir_path, exist_ok=True)
                 logger.info(f"创建目录: {dir_path}")
     
+    def _get_video_info(self, video_path: str) -> Dict[str, Any]:
+        """
+        获取视频文件信息
+        
+        参数:
+            video_path: 视频文件路径
+        
+        返回:
+            包含视频信息的字典
+        """
+        try:
+            # 使用OpenCV打开视频
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                logger.error(f"无法打开视频文件: {video_path}")
+                return {}
+                
+            # 获取基本信息
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            duration = frame_count / fps if fps > 0 else 0
+            
+            # 检查是否有音频
+            has_audio = False  # OpenCV无法直接检测音频
+            
+            # 检查视频格式
+            format = os.path.splitext(video_path)[1].lstrip('.').lower()
+            
+            # 读取一帧以验证视频是否可用
+            ret, _ = cap.read()
+            
+            # 释放资源
+            cap.release()
+            
+            # 检查视频是否有效
+            if not ret or frame_count <= 0:
+                logger.error(f"视频文件无效或损坏: {video_path}")
+                return {}
+                
+            return {
+                "duration": duration,
+                "fps": fps,
+                "frame_count": frame_count,
+                "width": width,
+                "height": height,
+                "resolution": f"{width}x{height}",
+                "format": format,
+                "has_audio": has_audio
+            }
+        except Exception as e:
+            logger.error(f"获取视频信息失败: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
     def process_video_file(self, video_file: str, output_dir: Optional[str] = None, vocabulary_id: Optional[str] = None) -> str:
         """
         处理视频文件，提取字幕并生成CSV文件
@@ -64,7 +161,7 @@ class VideoProcessor:
             vocabulary_id: 热词表ID，用于优化识别
             
         返回:
-            处理后的CSV文件路径
+            处理后的CSV文件路径，如果处理失败则返回空字符串
         """
         try:
             logger.info(f"开始处理视频文件: {video_file}")
@@ -80,8 +177,13 @@ class VideoProcessor:
             # 输出CSV文件路径
             output_csv = os.path.join(output_dir, f"{video_name}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv")
             
-            # 提取字幕并保存为CSV
-            subtitles = self._extract_subtitles_from_video(video_file, vocabulary_id)
+            # 提取字幕
+            subtitles = self._extract_subtitles_from_video(video_file)
+            
+            # 如果字幕提取失败（返回空列表），则直接返回失败
+            if not subtitles:
+                logger.error(f"字幕提取失败，无法处理视频: {video_file}")
+                return "" # 返回空字符串表示处理失败
             
             # 创建DataFrame并保存
             df = pd.DataFrame(subtitles)
@@ -94,66 +196,270 @@ class VideoProcessor:
             logger.error(f"处理视频文件出错: {str(e)}")
             return ""
     
-    def _extract_subtitles_from_video(self, video_file: str, vocabulary_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _extract_subtitles_from_video(self, video_file: str) -> List[Dict[str, Any]]:
         """
-        从视频中提取字幕，使用阿里云Paraformer API
+        从视频中提取字幕数据，使用阿里云DashScope服务的Paraformer模型进行语音识别
         
         参数:
             video_file: 视频文件路径
-            vocabulary_id: 热词表ID，用于优化识别
             
         返回:
-            字幕数据列表
+            包含字幕信息的字典列表，每个字典包含开始时间、结束时间和文本内容
         """
+        logger.info(f"开始从视频中提取字幕: {video_file}")
+        
         try:
-            logger.info(f"从视频提取字幕: {video_file}")
+            # 检查文件是否存在
+            if not os.path.exists(video_file):
+                logger.error(f"视频文件不存在: {video_file}")
+                return []
             
-            # 检查是否为本地文件
-            is_local_file = os.path.exists(video_file) and os.path.isfile(video_file)
+            # 检查DashScope模块是否可用
+            if not DASHSCOPE_AVAILABLE:
+                logger.error("DashScope模块不可用，请安装dashscope: pip install dashscope")
+                return self._fallback_subtitle_generation(video_file, error_type="module_missing")
             
-            if is_local_file:
-                # 将视频文件上传到可访问的URL（这里需要自行实现或使用阿里云OSS等服务）
-                video_url = self._upload_to_accessible_url(video_file)
-                if not video_url:
-                    logger.error("无法将视频文件上传到可访问的URL")
-                    return self._fallback_subtitle_generation(video_file)
-            else:
-                # 假设传入的是直接可访问的URL
-                video_url = video_file
+            # 检查API Key是否已设置
+            if not API_KEY:
+                logger.error("DashScope API Key未设置，请在环境变量中配置DASHSCOPE_API_KEY")
+                return self._fallback_subtitle_generation(video_file, error_type="api_key_missing")
             
-            # 配置识别参数
-            params = {
-                'model': 'paraformer-v2',  # 使用最新的多语种模型
-                'file_urls': [video_url]
+            # 获取视频信息
+            video_info = self._get_video_info(video_file)
+            if not video_info:
+                logger.error(f"无法获取视频信息: {video_file}")
+                return self._fallback_subtitle_generation(video_file, error_type="video_info_error")
+            
+            # 记录视频信息
+            logger.info(f"视频信息: 时长={video_info.get('duration', 'unknown')}秒, "
+                       f"格式={video_info.get('format', 'unknown')}, "
+                       f"分辨率={video_info.get('width', 'unknown')}x{video_info.get('height', 'unknown')}")
+            
+            # 检查视频时长是否在限制范围内（DashScope限制12小时）
+            if video_info.get('duration', 0) > 43200:  # 12小时 = 43200秒
+                logger.error(f"视频时长超过限制(12小时): {video_info.get('duration')}秒")
+                return self._fallback_subtitle_generation(video_file, error_type="duration_exceeded")
+            
+            # 预处理视频文件，提取音频并转换为opus格式
+            # 根据阿里云最佳实践，预处理可以显著提高识别效率
+            preprocessed_audio = self._preprocess_video_file(video_file)
+            if not preprocessed_audio:
+                logger.error(f"视频预处理失败: {video_file}")
+                return self._fallback_subtitle_generation(video_file, error_type="preprocessing_failed")
+            
+            logger.info(f"视频已预处理，音频文件: {preprocessed_audio}")
+            
+            # 上传预处理后的音频文件到可访问的URL
+            file_url = self._upload_to_accessible_url(preprocessed_audio)
+            if not file_url:
+                logger.error(f"无法创建可访问的URL: {preprocessed_audio}")
+                return self._fallback_subtitle_generation(video_file, error_type="upload_failed")
+            
+            logger.info(f"音频文件已上传到: {file_url}")
+            
+            # 设置API密钥
+            dashscope.api_key = API_KEY
+            
+            # 设置Paraformer模型
+            # 指定模型版本，PARAFORMER_MODEL_VERSION在配置文件中设置，例如："v2"
+            model_id = f"paraformer-{PARAFORMER_MODEL_VERSION}" if PARAFORMER_MODEL_VERSION else "paraformer-v2"
+            
+            # 构建音频参数
+            audio_params = {
+                "url": file_url,
+                "format": "opus",  # 预处理后的音频格式为opus
+                "sample_rate": 16000  # 采样率16kHz
             }
             
-            # 如果提供了热词表ID，添加到参数中
-            if vocabulary_id:
-                params['vocabulary_id'] = vocabulary_id
+            # 构建API调用参数
+            api_params = {}
+            if SUBTITLE_MODEL:
+                api_params["model"] = SUBTITLE_MODEL
+            if SUBTITLE_LANGUAGE and SUBTITLE_LANGUAGE != "auto":
+                api_params["language"] = SUBTITLE_LANGUAGE
             
-            # 调用阿里云Paraformer API进行语音识别
+            # 添加热词配置（如果已设置）
+            if HOT_WORDS and isinstance(HOT_WORDS, list) and len(HOT_WORDS) > 0:
+                logger.info(f"应用热词配置: {', '.join(HOT_WORDS[:5])}{'...' if len(HOT_WORDS) > 5 else ''}")
+                api_params["hot_words"] = HOT_WORDS
+            
+            # 记录API调用参数
+            logger.info(f"DashScope Paraformer API调用参数: model_id={model_id}, audio={audio_params}, params={api_params}")
+            
+            # 调用DashScope API
+            start_time = time.time()
             try:
-                logger.info(f"调用Paraformer API进行语音识别: {video_url}")
+                # 使用静态方法调用Recognition API，而不是实例方法
+                response = dashscope.audio.asr.recognition.Recognition.call(
+                    model=model_id,
+                    audio=audio_params,
+                    timeout=API_TIMEOUT,
+                    **api_params
+                )
                 
-                # 异步提交任务，同步等待结果
-                response = self.transcription.async_call(**params).wait()
+                api_time = time.time() - start_time
+                logger.info(f"DashScope API调用完成，耗时: {api_time:.2f}秒")
+                
+                # 记录API响应状态
+                logger.info(f"DashScope API响应状态: {response.status_code}, 消息: {response.message}")
                 
                 # 处理API返回结果
                 if response.status_code == 200 and response.output and 'sentences' in response.output:
-                    return self._parse_paraformer_response(response)
+                    subtitles = self._parse_paraformer_response(response)
+                    logger.info(f"成功从视频中提取了{len(subtitles)}条字幕")
+                    
+                    # 清理临时文件
+                    if os.path.exists(preprocessed_audio):
+                        os.remove(preprocessed_audio)
+                        logger.info(f"已清理临时音频文件: {preprocessed_audio}")
+                    
+                    return subtitles
                 else:
-                    logger.error(f"Paraformer API调用失败: {response.status_code}, {response.message}")
-                    return self._fallback_subtitle_generation(video_file)
-            
+                    # 记录API错误详情
+                    error_code = response.status_code
+                    error_msg = response.message
+                    error_detail = response.output.get('error', {}) if hasattr(response, 'output') and response.output else {}
+                    
+                    logger.error(f"Paraformer API调用失败: 状态码={error_code}, 消息={error_msg}, 详情={error_detail}")
+                    
+                    # 清理临时文件
+                    if os.path.exists(preprocessed_audio):
+                        os.remove(preprocessed_audio)
+                        logger.info(f"已清理临时音频文件: {preprocessed_audio}")
+                    
+                    return self._fallback_subtitle_generation(video_file, error_type="api_error", 
+                                                             error_detail=f"{error_code}: {error_msg}")
             except Exception as api_error:
-                logger.error(f"调用Paraformer API出错: {str(api_error)}")
-                return self._fallback_subtitle_generation(video_file)
+                # 捕获API调用异常
+                api_time = time.time() - start_time
+                logger.exception(f"DashScope API调用异常，耗时: {api_time:.2f}秒, 错误: {str(api_error)}")
+                
+                # 清理临时文件
+                if os.path.exists(preprocessed_audio):
+                    os.remove(preprocessed_audio)
+                    logger.info(f"已清理临时音频文件: {preprocessed_audio}")
+                
+                return self._fallback_subtitle_generation(video_file, error_type="api_exception", 
+                                                         error_detail=str(api_error))
         
         except Exception as e:
-            logger.error(f"从视频提取字幕出错: {str(e)}")
-            return self._fallback_subtitle_generation(video_file)
+            # 捕获所有其他异常
+            logger.exception(f"提取字幕过程中发生未预期的错误: {str(e)}")
+            return self._fallback_subtitle_generation(video_file, error_type="unexpected_error", 
+                                                     error_detail=str(e))
     
-    def _parse_paraformer_response(self, response: ApiResponse) -> List[Dict[str, Any]]:
+    def _preprocess_video_file(self, video_file: str) -> Optional[str]:
+        """
+        预处理视频文件，提取音轨、降采样到16kHz并压缩为opus格式
+        参考阿里云最佳实践: https://help.aliyun.com/zh/model-studio/developer-reference/paraformer-best-practices
+        
+        参数:
+            video_file: 视频文件路径
+            
+        返回:
+            处理后的音频文件路径，处理失败则返回None
+        """
+        try:
+            # 创建临时目录 - 不使用日期子目录，简化路径
+            temp_dir = VIDEO_TEMP_DIR
+            os.makedirs(temp_dir, exist_ok=True)
+            logger.info(f"创建/确认临时目录: {temp_dir}")
+            
+            # 检查源文件
+            if not os.path.exists(video_file):
+                logger.error(f"预处理源文件不存在: {video_file}")
+                return None
+                
+            file_size = os.path.getsize(video_file) / (1024 * 1024)
+            logger.info(f"预处理源文件: {video_file}, 大小: {file_size:.2f}MB")
+            
+            # 生成输出音频文件路径，使用时间戳确保唯一性
+            file_name = os.path.splitext(os.path.basename(video_file))[0]
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            output_audio = os.path.join(temp_dir, f"{file_name}_{timestamp}.opus")
+            
+            logger.info(f"预处理输出音频文件: {output_audio}")
+            
+            # 检查ffmpeg是否可用
+            try:
+                ffmpeg_version = subprocess.check_output(['ffmpeg', '-version'], stderr=subprocess.STDOUT, universal_newlines=True)
+                # 修复: 在f-string中不能使用反斜杠，先拆分然后再插入
+                first_line = ffmpeg_version.split('\n')[0]
+                logger.info(f"FFmpeg可用: {first_line}")
+            except (subprocess.SubprocessError, FileNotFoundError) as e:
+                logger.error(f"FFmpeg不可用，无法进行预处理: {str(e)}")
+                return None
+            
+            # 使用ffmpeg提取音频，降采样到16kHz，并压缩为opus格式
+            # -ac 1: 单声道
+            # -ar 16000: 采样率16kHz
+            # -acodec libopus: 使用opus编码器
+            # -loglevel warning: 减少输出
+            cmd = [
+                'ffmpeg', '-y', '-i', video_file, 
+                '-ac', '1', '-ar', '16000', 
+                '-acodec', 'libopus', 
+                '-loglevel', 'warning',
+                output_audio
+            ]
+            
+            logger.info(f"执行预处理命令: {' '.join(cmd)}")
+            
+            # 执行命令并捕获输出
+            try:
+                process = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    universal_newlines=True
+                )
+                stdout, stderr = process.communicate(timeout=300)  # 添加超时限制
+                
+                # 检查命令执行结果
+                if process.returncode != 0:
+                    logger.error(f"预处理视频失败，返回码: {process.returncode}")
+                    logger.error(f"FFmpeg错误输出: {stderr}")
+                    return None
+                    
+                if stderr and 'error' in stderr.lower():
+                    logger.warning(f"FFmpeg警告或错误: {stderr}")
+            except subprocess.TimeoutExpired:
+                # 处理超时
+                process.kill()
+                logger.error("预处理视频超时(5分钟)，终止进程")
+                return None
+            except Exception as subproc_err:
+                logger.error(f"预处理调用FFmpeg出错: {str(subproc_err)}")
+                return None
+            
+            # 检查输出文件是否存在
+            if not os.path.exists(output_audio):
+                logger.error(f"预处理后的音频文件不存在: {output_audio}")
+                return None
+                
+            # 检查输出文件大小是否合理
+            output_size = os.path.getsize(output_audio)
+            if output_size <= 0:
+                logger.error(f"预处理后的音频文件为空: {output_audio}")
+                os.remove(output_audio)  # 删除空文件
+                return None
+                
+            # 记录文件大小减少情况
+            video_size = os.path.getsize(video_file)
+            audio_size = output_size
+            size_reduction = (1 - audio_size / video_size) * 100
+            
+            logger.info(f"视频预处理成功: 原始大小={video_size/1024/1024:.2f}MB, "
+                      f"处理后大小={audio_size/1024/1024:.2f}MB, "
+                      f"减少={size_reduction:.2f}%")
+            
+            return output_audio
+            
+        except Exception as e:
+            logger.exception(f"预处理视频文件出错: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def _parse_paraformer_response(self, response) -> List[Dict[str, Any]]:
         """
         解析Paraformer API返回的结果
         
@@ -191,111 +497,154 @@ class VideoProcessor:
     
     def _upload_to_accessible_url(self, file_path: str) -> Optional[str]:
         """
-        将文件上传到可公网访问的URL
-        此方法需要根据实际情况实现，例如使用阿里云OSS、腾讯云COS等
+        将文件上传到阿里云OSS并返回可公网访问的URL，
+        或在OSS不可用时创建临时可访问的本地URL
         
         参数:
             file_path: 本地文件路径
             
         返回:
-            可访问的URL，如果上传失败则返回None
+            公网可访问的URL，上传失败则返回None
         """
-        # 开发环境简易实现：创建临时目录并返回本地文件路径
-        # 注意：这不是真正的可公网访问URL，仅用于本地开发和测试
-        # 在生产环境中，应该使用OSS客户端等实际上传实现
         try:
-            # 确保uploads目录存在
-            upload_dir = os.path.join('data', 'uploads')
-            os.makedirs(upload_dir, exist_ok=True)
-            
-            # 复制文件到uploads目录
-            import shutil
-            filename = os.path.basename(file_path)
-            target_path = os.path.join(upload_dir, filename)
-            shutil.copy(file_path, target_path)
-            
-            logger.info(f"复制文件到本地目录: {target_path}")
-            
-            # 我们将使用本地文件路径作为URL替代（开发测试用）
-            # 在实际生产环境下，下面的注释代码可以作为参考
-            """
-            # 示例：使用阿里云OSS上传
-            import oss2
-            
-            # 配置阿里云OSS
-            access_key_id = os.environ.get('OSS_ACCESS_KEY_ID')
-            access_key_secret = os.environ.get('OSS_ACCESS_KEY_SECRET')
-            bucket_name = os.environ.get('OSS_BUCKET_NAME')
-            endpoint = os.environ.get('OSS_ENDPOINT')
-            
-            # 初始化认证和Bucket
-            auth = oss2.Auth(access_key_id, access_key_secret)
-            bucket = oss2.Bucket(auth, endpoint, bucket_name)
-            
-            # 上传文件
-            object_name = f"uploads/{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
-            result = bucket.put_object_from_file(object_name, file_path)
-            
-            # 生成URL
-            url = f"https://{bucket_name}.{endpoint}/{object_name}"
-            logger.info(f"文件已上传到OSS: {url}")
-            return url
-            """
-            
-            # 开发测试时使用file://协议返回本地路径
-            # 注意：这不是Paraformer API支持的URL格式，仅用于模拟测试
-            return f"file://{target_path}"
-            
+            # 检查是否启用了OSS
+            if ENABLE_OSS and OSS_AVAILABLE:
+                # 检查OSS配置是否完整
+                if not all([OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME, OSS_ENDPOINT]):
+                    logger.error("阿里云OSS配置不完整，请检查环境变量")
+                    return self._create_local_accessible_url(file_path)
+                
+                # 初始化OSS客户端
+                auth = oss2.Auth(OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET)
+                
+                # 根据阿里云最佳实践，使用与Paraformer API同地域的OSS端点
+                # 当前Paraformer部署地域：华北2（北京，cn-beijing）
+                # 使用内网域名，避免产生不必要的OSS网络流量费用
+                bucket_endpoint = OSS_ENDPOINT.replace('oss-cn-beijing.aliyuncs.com', 'oss-cn-beijing-internal.aliyuncs.com')
+                bucket = oss2.Bucket(auth, bucket_endpoint, OSS_BUCKET_NAME)
+                
+                # 生成OSS文件路径
+                file_name = os.path.basename(file_path)
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                oss_file_path = f"{OSS_UPLOAD_DIR}/{timestamp}_{file_name}"
+                
+                # 上传文件到OSS
+                logger.info(f"正在上传文件到阿里云OSS: {oss_file_path}")
+                result = bucket.put_object_from_file(oss_file_path, file_path)
+                
+                # 检查上传结果
+                if result.status == 200:
+                    # 生成公网访问URL
+                    public_url = OSS_PUBLIC_URL_TEMPLATE.format(
+                        bucket=OSS_BUCKET_NAME,
+                        endpoint=OSS_ENDPOINT,
+                        key=oss_file_path
+                    )
+                    logger.info(f"文件成功上传到OSS: {public_url}")
+                    return public_url
+                else:
+                    logger.error(f"上传文件到OSS失败: {result.status}")
+                    return self._create_local_accessible_url(file_path)
+            else:
+                # OSS不可用，尝试创建本地可访问URL
+                logger.warning("阿里云OSS未启用或模块不可用，尝试创建本地可访问URL")
+                return self._create_local_accessible_url(file_path)
+                
         except Exception as e:
-            logger.error(f"上传文件到可访问URL出错: {str(e)}")
+            logger.error(f"上传文件到OSS出错: {str(e)}")
+            return self._create_local_accessible_url(file_path)
+    
+    def _create_local_accessible_url(self, file_path: str) -> Optional[str]:
+        """
+        创建本地文件的可访问URL，在OSS不可用时使用
+        
+        参数:
+            file_path: 本地文件路径
+            
+        返回:
+            本地可访问的URL，创建失败则返回None
+        """
+        try:
+            # 创建一个简单的文件URL，此方法在实际应用中需要配合本地服务器使用
+            # 如果是在本地开发环境，可以使用file://协议
+            # 但注意：DashScope模块可能无法处理file://协议的URL
+            
+            # 复制文件到临时目录并命名为可预测的名称
+            file_name = os.path.basename(file_path)
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            temp_dir = os.path.join(VIDEO_TEMP_DIR, timestamp)
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            temp_file_path = os.path.join(temp_dir, file_name)
+            # 复制文件
+            import shutil
+            shutil.copy2(file_path, temp_file_path)
+            
+            # 创建文件URL，对于真实应用，这应该是一个可以通过公网访问的URL
+            # 这里提供了file://协议作为临时解决方案，实际应用中可能需要本地服务器
+            file_url = f"file://{os.path.abspath(temp_file_path)}"
+            
+            logger.info(f"创建本地文件URL: {file_url}")
+            
+            # 输出警告，提醒用户这可能不适用于生产环境
+            logger.warning("注意：使用本地文件URL可能无法被DashScope API处理，建议配置OSS或其他云存储")
+            
+            return file_url
+        except Exception as e:
+            logger.error(f"创建本地文件URL出错: {str(e)}")
             return None
     
-    def _fallback_subtitle_generation(self, video_file: str) -> List[Dict[str, Any]]:
+    def _fallback_subtitle_generation(self, video_file: str, error_type: str = "unknown", 
+                                     error_detail: str = "") -> List[Dict[str, Any]]:
         """
-        当API调用失败时的备用字幕生成方法
+        当语音识别失败或DashScope不可用时，记录详细错误信息并返回空列表。
         
         参数:
             video_file: 视频文件路径
+            error_type: 错误类型
+            error_detail: 错误详细信息
             
         返回:
-            字幕数据列表
+            空列表，表示没有生成字幕数据。
         """
-        logger.warning(f"使用备用方法生成字幕: {video_file}")
+        # 错误类型说明
+        error_descriptions = {
+            "module_missing": "DashScope模块未安装",
+            "api_key_missing": "API Key未配置",
+            "video_info_error": "无法获取视频信息",
+            "duration_exceeded": "视频时长超过限制",
+            "upload_failed": "无法上传视频到可访问URL",
+            "api_error": "API调用返回错误",
+            "api_exception": "API调用过程中发生异常",
+            "unexpected_error": "处理过程中发生未预期的错误",
+            "unknown": "未知错误"
+        }
         
-        # 模拟字幕数据
-        subtitles = []
-        video_duration = 300  # 模拟5分钟视频
+        error_desc = error_descriptions.get(error_type, "未知错误")
         
-        # 生成10个模拟字幕片段
-        for i in range(10):
-            start_time = i * 30  # 每30秒一个片段
-            end_time = start_time + 30
-            
-            # 格式化时间
-            start_formatted = self._format_time(start_time)
-            end_formatted = self._format_time(end_time)
-            
-            # 生成模拟文本
-            if i % 3 == 0:
-                text = f"这是第{i+1}个字幕片段，讨论了产品特性和用户需求分析。"
-            elif i % 3 == 1:
-                text = f"第{i+1}个片段介绍了市场竞争和品牌策略，以及如何提升用户体验。"
-            else:
-                text = f"这是关于技术架构和实现方案的第{i+1}个讨论片段，探讨了系统优化。"
-            
-            subtitles.append({
-                "index": i,
-                "start": start_time,
-                "end": end_time,
-                "start_formatted": start_formatted,
-                "end_formatted": end_formatted,
-                "timestamp": start_formatted,
-                "duration": end_time - start_time,
-                "text": text
-            })
+        # 记录详细错误信息
+        logger.error(f"视频语音识别失败: {video_file}")
+        logger.error(f"错误类型: {error_type} - {error_desc}")
+        if error_detail:
+            logger.error(f"错误详情: {error_detail}")
         
-        logger.info(f"成功生成模拟字幕，共 {len(subtitles)} 条")
-        return subtitles
+        # 建议解决方案
+        solutions = {
+            "module_missing": "请运行 'pip install dashscope' 安装DashScope模块",
+            "api_key_missing": "请在.env文件或环境变量中设置DASHSCOPE_API_KEY",
+            "video_info_error": "请检查视频文件是否损坏或格式不受支持",
+            "duration_exceeded": "请将视频分割为较短片段，每段不超过12小时",
+            "upload_failed": "请检查OSS配置或网络连接",
+            "api_error": "请检查API请求参数是否正确，可能需调整视频格式",
+            "api_exception": "请检查网络连接和API Key是否有效",
+            "unexpected_error": "请检查日志获取详细错误信息"
+        }
+        
+        solution = solutions.get(error_type, "请检查日志获取详细错误信息")
+        logger.info(f"建议解决方案: {solution}")
+        
+        # 不再生成模拟数据，直接返回空列表表示失败
+        return []
     
     def _format_time(self, seconds: float) -> str:
         """
@@ -553,4 +902,45 @@ class VideoProcessor:
                 "text": text
             })
         
-        return subtitles 
+        return subtitles
+    
+    def _get_audio_format(self, file_path: str) -> str:
+        """
+        根据文件扩展名获取音频格式，用于DashScope API参数
+        
+        参数:
+            file_path: 文件路径
+            
+        返回:
+            适用于DashScope API的音频格式
+        """
+        # 获取文件扩展名（去掉点号并转为小写）
+        ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        
+        # DashScope支持的音频格式映射
+        format_mapping = {
+            'mp4': 'mp4',
+            'mp3': 'mp3',
+            'wav': 'wav',
+            'flac': 'flac',
+            'aac': 'aac',
+            'amr': 'amr',
+            'avi': 'avi',
+            'flv': 'flv',
+            'm4a': 'm4a',
+            'mkv': 'mkv',
+            'mov': 'mov',
+            'mpeg': 'mpeg',
+            'ogg': 'ogg',
+            'opus': 'opus',
+            'webm': 'webm',
+            'wma': 'wma',
+            'wmv': 'wmv'
+        }
+        
+        # 如果扩展名在映射中，返回对应格式，否则返回默认格式
+        if ext in format_mapping:
+            return format_mapping[ext]
+        else:
+            logger.warning(f"未知的文件格式: {ext}，使用默认格式'auto'")
+            return 'auto' 
