@@ -151,7 +151,7 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
 
         # 第1步：读取视频文件
         progress_bar.progress(1/6, text='正在读取视频文件...')
-        status_text.text('正在读取视频文件...')
+        status_text.text("")
         try:
             # 创建VideoProcessor实例并调用实例方法
             processor = VideoProcessor()
@@ -168,7 +168,7 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
 
         # 第2步：提取音频
         progress_bar.progress(2/6, text='正在提取音频...')
-        status_text.text('正在提取音频...')
+        status_text.text("")
         try:
             # 使用相同的processor实例
             audio_file = processor._preprocess_video_file(file)
@@ -179,7 +179,7 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
 
         # 第3步：语音识别
         progress_bar.progress(3/6, text='正在进行语音识别...')
-        status_text.text('正在进行语音识别...')
+        status_text.text("")
         try:
             # 使用VideoProcessor处理音频文件获取文本
             subtitles = processor._extract_subtitles_from_video(audio_file)
@@ -191,7 +191,7 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
 
         # 第4步：语义分割
         progress_bar.progress(4/6, text='正在进行语义分割...')
-        status_text.text('正在进行语义分割...')
+        status_text.text("")
         try:
             # 创建DataFrame用于分析
             df = pd.DataFrame([{
@@ -200,9 +200,46 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
             } for item in subtitles if item.get('text')])
             
             if len(df) > 0:
-                status_text.text(f"视频处理完成，识别了 {len(df)} 条句子")
+                status_text.text(f"识别了 {len(df)} 条句子")
             else:
-                raise ValueError("未识别到有效的句子")
+                error_msg = "未识别到有效的句子"
+                # 添加调试信息显示
+                st.error("语义分割失败：未识别到有效的句子")
+                
+                # 显示详细诊断信息
+                with st.expander("查看详细错误诊断", expanded=True):
+                    st.markdown("### 错误诊断")
+                    st.markdown("分析失败可能是由以下原因导致：")
+                    
+                    # 检查视频文件是否存在/可访问
+                    is_url = file.startswith(('http://', 'https://'))
+                    if is_url:
+                        st.markdown(f"1. **远程视频文件问题**")
+                        st.markdown(f"   - URL: `{file}`")
+                        st.markdown(f"   - 可能原因：视频URL无法直接访问、需要授权或文件不存在")
+                        st.markdown(f"   - 建议：确认URL是否有效，可以尝试在浏览器中直接打开")
+                    else:
+                        st.markdown(f"1. **本地视频文件问题**")
+                        st.markdown(f"   - 路径: `{file}`")
+                        st.markdown(f"   - 文件存在: {'是' if os.path.exists(file) else '否'}")
+                        st.markdown(f"   - 建议：检查文件路径是否正确，文件是否被其他程序占用")
+                    
+                    # 检查音频提取情况
+                    st.markdown(f"2. **音频提取问题**")
+                    st.markdown(f"   - 音频文件: `{audio_file}`")
+                    st.markdown(f"   - 音频文件存在: {'是' if audio_file and os.path.exists(audio_file) else '否'}")
+                    
+                    # 检查语音识别结果
+                    st.markdown(f"3. **语音识别问题**")
+                    st.markdown(f"   - 识别到的字幕数量: {len(subtitles) if subtitles else 0}")
+                    st.markdown(f"   - 可能原因：视频没有语音内容、背景噪音过大、语音不清晰或API调用失败")
+                    
+                    # 检查环境配置
+                    st.markdown(f"4. **环境配置问题**")
+                    st.markdown(f"   - API配置: {'已设置' if 'API_KEY' in os.environ else '未设置'}")
+                    st.markdown(f"   - 建议：检查环境变量中是否正确设置了API密钥")
+                
+                raise ValueError(error_msg)
         except Exception as e:
             logger.error(f"语义分割失败: {str(e)}")
             status_text.error(f"语义分割失败: {str(e)}")
@@ -211,7 +248,7 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
         # 第5步：维度/关键词分析
         progress_bar.progress(5/6, text='正在进行维度/关键词分析...')
         if analysis_type == "维度分析":
-            status_text.text("正在进行维度分析...")
+            status_text.text("应用维度：" + ",".join(dimensions.get('level1', [])[:3]) + "...")
             results['dimensions'] = dimensions
             try:
                 from utils.analyzer import VideoAnalyzer
@@ -219,6 +256,11 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
                 dimension_results = analyzer.analyze_dimensions(df, dimensions)
                 if dimension_results and 'matches' in dimension_results:
                     results['matches'] = dimension_results['matches']
+                    # 添加分析方法显示
+                    if 'analysis_method' in dimension_results:
+                        results['analysis_method'] = dimension_results['analysis_method']
+                    else:
+                        results['analysis_method'] = '语义匹配'
                 else:
                     st.error("维度分析失败，未能生成有效的匹配结果")
                     return None, None
@@ -226,14 +268,19 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
                 st.error("维度分析失败，无法导入 VideoAnalyzer 模块")
                 return None, None
         elif analysis_type == "关键词分析":  
-            status_text.text("正在进行关键词分析...")
+            status_text.text("应用关键词：" + ",".join(keywords[:3] if len(keywords) > 3 else keywords) + "...")
             results['keywords'] = keywords
             try:
                 from utils.analyzer import VideoAnalyzer
                 analyzer = VideoAnalyzer()
                 keyword_results = analyzer.analyze_keywords(df, keywords)
                 if keyword_results and 'matches' in keyword_results:
-                    results['matches'] = keyword_results['matches'] 
+                    results['matches'] = keyword_results['matches']
+                    # 添加分析方法显示
+                    if 'analysis_method' in keyword_results:
+                        results['analysis_method'] = keyword_results['analysis_method']
+                    else:
+                        results['analysis_method'] = '语义匹配'
                 else:
                     st.error("关键词分析失败，未能生成有效的匹配结果")
                     return None, None
@@ -243,7 +290,7 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
 
         # 第6步：保存结果
         progress_bar.progress(6/6, text='正在保存结果...')
-        status_text.text('正在保存结果...')
+        status_text.text("")
         try:
             result_file = os.path.join(ANALYSIS_RESULTS_DIR, f"analysis_{datetime.now().strftime('%Y%m%d%H%M%S')}.json")
             with open(result_file, 'w', encoding='utf-8') as f:
@@ -255,7 +302,10 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
 
         # 分析完成
         progress_bar.progress(1.0, text='分析完成！')
-        status_text.text("分析完成！")
+        if 'analysis_method' in results:
+            status_text.text(f"使用方法：{results['analysis_method']}")
+        else:
+            status_text.text("")
 
         # 检查是否有错误结果
         if len(results['matches']) == 1 and results['matches'][0].get('is_error', False):
@@ -387,6 +437,11 @@ def show_analysis_results(results, result_file):
     # 显示基本信息
     st.markdown(f"**分析类型**: {results['type']}")
     st.markdown(f"**分析时间**: {results['timestamp']}")
+    
+    # 显示使用的分析方法
+    if 'analysis_method' in results:
+        st.markdown(f"**分析方法**: {results['analysis_method']}")
+    
     st.markdown(f"**匹配数量**: {len(results['matches'])}")
     
     # 下载按钮

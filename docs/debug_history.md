@@ -13,6 +13,7 @@
   - [DashScope语音识别回调实现](#dashscope语音识别回调实现)
   - [DashScope录音文件识别API实现](#dashscope录音文件识别api实现)
   - [VideoProcessor方法调用错误](#videoproccessor方法调用错误)
+  - [UI中状态显示重复问题](#ui中状态显示重复问题)
 
 ## 视频分析模块
 
@@ -507,3 +508,54 @@ python scripts/fix_indent.py <文件路径>
 
 ### 5. 关键词标签
 #DashScope #API #字幕提取 #格式化错误 #参数错误 #本地文件URL 
+
+## [UI中状态显示重复问题] 视频处理过程中状态文本重复显示 (2025-04-26解决)
+
+### 1. 问题背景
+- 发现时间：2025-04-26
+- 问题表现：视频处理过程中，状态文本(红色框中)重复显示了与进度条相同的信息，造成用户界面视觉冗余
+- 影响范围：影响用户体验，界面显示重复和杂乱
+
+### 2. 尝试方案历史
+- **方案1：修改状态文本显示逻辑**
+  - 假设：在`process_video_analysis`函数中的各个处理步骤中，同时更新了progress_bar文本和status_text，导致信息重复
+  - 分析：检查`process_video_analysis`函数中各阶段的状态更新逻辑
+  - 发现每个进度阶段(提取音频、语音识别等)都存在重复显示的问题
+  - 修改：在进度条显示处理阶段信息的同时，改变status_text的内容，使其显示补充信息或置为空
+  - 结果：✅ 修改成功，避免了重复显示相同的状态信息
+
+### 3. 最终解决方案
+修改`pages/video_analysis.py`中`process_video_analysis`函数的所有阶段中状态文本的显示逻辑：
+
+```python
+# 修改前 - 重复显示相同信息
+progress_bar.progress(2/6, text='正在提取音频...')
+status_text.text('正在提取音频...')
+
+# 修改后 - 避免重复
+progress_bar.progress(2/6, text='正在提取音频...')
+status_text.text("")  # 清空状态文本，避免重复
+```
+
+对于需要更多用户反馈的步骤，使用status_text显示补充信息而非重复信息：
+
+```python
+# 语义分割阶段的更改
+if len(df) > 0:
+    status_text.text(f"识别了 {len(df)} 条句子")  # 显示补充信息
+
+# 维度/关键词分析阶段的更改
+if analysis_type == "维度分析":
+    status_text.text("应用维度：" + ",".join(dimensions.get('level1', [])[:3]) + "...")  # 显示应用的维度信息
+elif analysis_type == "关键词分析":
+    status_text.text("应用关键词：" + ",".join(keywords[:3] if len(keywords) > 3 else keywords) + "...")  # 显示应用的关键词
+```
+
+### 4. 经验教训与预防措施
+- 在设计界面状态反馈时，各个UI组件应该提供互补而非重复的信息
+- 进度条适合显示当前处理阶段，而状态文本更适合显示该阶段的补充信息或详细内容
+- 对于多步骤处理流程，应当设计清晰的UI反馈策略，确保信息既完整又不冗余
+- 提前定义UI组件的职责划分，避免后期需要大范围调整
+
+### 5. 关键词标签
+#UI优化 #用户体验 #Streamlit #状态显示 #进度反馈
