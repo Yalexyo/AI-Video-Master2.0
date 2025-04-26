@@ -15,6 +15,7 @@ import nest_asyncio
 import time
 import subprocess
 import cv2
+from urllib.parse import urlparse
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -96,6 +97,16 @@ class VideoProcessor:
         
         # 确保输出目录存在
         self._ensure_directories()
+        
+        # 初始化音频缓存字典
+        self.audio_cache = {}
+        # 加载已处理的视频音频缓存记录
+        self._load_audio_cache()
+        
+        # 初始化视频缓存字典
+        self.video_cache = {}
+        # 加载已下载的视频缓存记录
+        self._load_video_cache()
     
     def _ensure_directories(self):
         """确保必要的目录结构存在"""
@@ -111,6 +122,48 @@ class VideoProcessor:
             if not os.path.exists(dir_path):
                 os.makedirs(dir_path, exist_ok=True)
                 logger.info(f"创建目录: {dir_path}")
+    
+    def _load_audio_cache(self):
+        """加载已处理的视频音频缓存记录"""
+        cache_path = os.path.join('data', 'cache', 'audio_cache.json')
+        try:
+            if os.path.exists(cache_path):
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    self.audio_cache = json.load(f)
+                logger.info(f"已加载{len(self.audio_cache)}条音频缓存记录")
+            else:
+                self.audio_cache = {}
+        except Exception as e:
+            logger.warning(f"加载音频缓存记录失败: {str(e)}")
+            self.audio_cache = {}
+    
+    def _save_audio_cache(self):
+        """保存音频缓存记录"""
+        cache_path = os.path.join('data', 'cache', 'audio_cache.json')
+        try:
+            # 确保缓存目录存在
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(self.audio_cache, f, ensure_ascii=False, indent=2)
+            logger.info(f"已保存{len(self.audio_cache)}条音频缓存记录")
+        except Exception as e:
+            logger.warning(f"保存音频缓存记录失败: {str(e)}")
+            
+    def _get_cache_key(self, video_file: str) -> str:
+        """获取视频文件的缓存键"""
+        # 如果是URL，使用URL作为键
+        if video_file.startswith(('http://', 'https://')):
+            return video_file
+        # 如果是本地文件，使用文件名和大小作为键
+        else:
+            try:
+                file_size = os.path.getsize(video_file)
+                file_name = os.path.basename(video_file)
+                return f"{file_name}_{file_size}"
+            except:
+                # 如果获取文件大小失败，直接使用文件路径
+                return video_file
     
     def _get_video_info(self, video_path: str) -> Dict[str, Any]:
         """
@@ -136,9 +189,6 @@ class VideoProcessor:
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             duration = frame_count / fps if fps > 0 else 0
             
-            # 检查是否有音频
-            has_audio = False  # OpenCV无法直接检测音频
-            
             # 检查视频格式
             format = os.path.splitext(video_path)[1].lstrip('.').lower()
             
@@ -152,6 +202,37 @@ class VideoProcessor:
             if not ret or frame_count <= 0:
                 logger.error(f"视频文件无效或损坏: {video_path}")
                 return {}
+            
+            # 使用ffmpeg检查是否有音频轨道
+            has_audio = True  # 默认假设有音频，除非确认没有
+            try:
+                # 使用FFprobe检查音频流
+                cmd = [
+                    'ffprobe',
+                    '-v', 'quiet',
+                    '-select_streams', 'a',
+                    '-show_streams',
+                    '-of', 'json',
+                    video_path
+                ]
+                
+                result = subprocess.run(
+                    cmd, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+                
+                if result.returncode == 0:
+                    output = json.loads(result.stdout)
+                    # 如果没有音频流，streams列表为空
+                    has_audio = len(output.get('streams', [])) > 0
+                    logger.info(f"视频{video_path}{'有' if has_audio else '没有'}音频轨道")
+                else:
+                    logger.warning(f"ffprobe检查音频失败: {result.stderr}，假设视频有音频轨道")
+            except Exception as e:
+                logger.warning(f"检查音频轨道时出错: {str(e)}，假设视频有音频轨道")
                 
             return {
                 "duration": duration,
@@ -184,31 +265,90 @@ class VideoProcessor:
         
         try:
             # 从视频中提取字幕
+            logger.info(f"开始从视频中提取字幕: {video_file}")
             subtitles = self._extract_subtitles_from_video(video_file, vocabulary_id)
             
             # 如果提取失败（返回空列表），则直接返回空字符串
             if not subtitles:
                 logger.error(f"视频文件语音识别失败，未能提取到字幕: {video_file}")
+                # 即使失败也要尝试清理临时文件
+                self.cleanup_downloaded_videos(video_file)
                 return ""
+            
+            logger.info(f"成功提取字幕，共 {len(subtitles)} 条记录，准备保存到CSV文件")
             
             # 保存字幕数据到CSV文件
             output_csv = self._save_subtitles_to_csv(video_file, subtitles)
             
             if not output_csv:
                 logger.error(f"保存字幕到CSV文件失败: {video_file}")
+                # 即使失败也要尝试清理临时文件
+                self.cleanup_downloaded_videos(video_file)
                 return ""
             
             logger.info(f"视频处理完成，字幕保存到: {output_csv}")
+            
+            # 清理临时文件
+            self.cleanup_downloaded_videos(video_file)
+            
             return output_csv
         
         except Exception as e:
             logger.exception(f"处理视频文件失败: {str(e)}")
+            # 即使处理失败也尝试清理临时文件
+            self.cleanup_downloaded_videos(video_file)
             return ""
     
+    def _cleanup_temp_files(self, temp_file: str) -> None:
+        """
+        清理临时文件
+        
+        参数:
+            temp_file: 临时文件路径
+        """
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+                logger.info(f"已清理临时文件: {temp_file}")
+            except Exception as e:
+                logger.warning(f"清理临时文件失败: {temp_file}, 错误: {str(e)}")
+
+    def cleanup_downloaded_videos(self, video_file: str) -> None:
+        """
+        清理下载的视频文件
+        
+        参数:
+            video_file: 视频文件路径或URL
+        """
+        # 如果是URL，获取URL中的文件名
+        if video_file.startswith('http'):
+            # 从URL中提取文件名
+            filename = os.path.basename(urlparse(video_file).path)
+            if not filename:
+                # 如果URL没有明确的文件名，则无法清理
+                logger.warning(f"无法从URL提取文件名: {video_file}")
+                return
+                
+            # 检查temp/downloaded和temp/videos/downloaded目录
+            possible_dirs = ['temp/downloaded', 'temp/videos/downloaded']
+            for dir_path in possible_dirs:
+                if os.path.exists(dir_path):
+                    # 查找该目录下与URL文件名匹配的文件
+                    for file in os.listdir(dir_path):
+                        if file == filename or (file.endswith(os.path.splitext(filename)[1]) and 
+                                             urlparse(video_file).netloc in file):
+                            file_path = os.path.join(dir_path, file)
+                            self._cleanup_temp_files(file_path)
+                            
+        # 如果是本地路径但在临时目录中
+        elif 'temp' in video_file and os.path.exists(video_file):
+            self._cleanup_temp_files(video_file)
+            
+        logger.info(f"视频文件清理完成: {video_file}")
+
     def _extract_subtitles_from_video(self, video_file: str, vocabulary_id: str = None) -> List[Dict[str, Any]]:
         """
         从视频中提取字幕数据，使用阿里云DashScope服务的Paraformer模型进行语音识别
-        支持直接使用OSS URL进行识别，无需下载到本地
         
         参数:
             video_file: 视频文件路径或URL
@@ -217,6 +357,7 @@ class VideoProcessor:
         返回:
             包含字幕信息的字典列表，每个字典包含开始时间、结束时间和文本内容
         """
+        start_time = time.time()
         logger.info(f"开始从视频中提取字幕: {video_file}")
         audio_file = None
         
@@ -226,7 +367,7 @@ class VideoProcessor:
                 logger.error("视频文件路径为空")
                 return []
                 
-            # 判断是否为OSS URL链接
+            # 判断是否为URL链接
             is_url = video_file.startswith(('http://', 'https://'))
             
             # 如果不是URL，检查文件是否存在
@@ -251,295 +392,228 @@ class VideoProcessor:
             # 检查DashScope模块是否可用
             if not DASHSCOPE_AVAILABLE:
                 logger.error("DashScope模块不可用，请安装dashscope: pip install dashscope")
-                return self._fallback_subtitle_generation(video_file)
+                return []
             
             # 检查API Key是否已设置
             if not API_KEY:
                 logger.error("DashScope API Key未设置，请在环境变量中配置DASHSCOPE_API_KEY")
-                return self._fallback_subtitle_generation(video_file)
+                return []
             
             # 设置API密钥
             dashscope.api_key = API_KEY
             
-            # 设置Paraformer模型
-            model_id = f"paraformer-{PARAFORMER_MODEL_VERSION}" if PARAFORMER_MODEL_VERSION else "paraformer-v2"
+            # 首先预处理提取音频文件
+            preprocess_start = time.time()
+            audio_file = self._preprocess_video_file(video_file)
+            preprocess_time = time.time() - preprocess_start
+            logger.info(f"预处理视频文件完成，耗时: {preprocess_time:.2f}秒")
+            
+            if not audio_file:
+                logger.error(f"预处理视频失败，无法提取音频: {video_file}")
+                return []
+            
+            if not os.path.exists(audio_file) or os.path.getsize(audio_file) == 0:
+                logger.error(f"生成的音频文件不存在或为空: {audio_file}")
+                return []
+            
+            # 使用Paraformer录音文件识别API
+            logger.info(f"使用DashScope Paraformer录音文件识别API进行语音识别: {audio_file}")
             
             # 构建API调用参数
-            api_kwargs = {}
+            api_kwargs = {
+                'model': f"paraformer-v2",  # 使用录音文件识别模型
+                'format': self._get_audio_format(audio_file),
+                'sample_rate': 16000
+            }
             
-            # 添加基础音频参数
-            api_kwargs['format'] = self._get_audio_format(video_file)
-            api_kwargs['sample_rate'] = 16000
-            
-            # 添加额外参数
+            # 添加语言设置
             if SUBTITLE_LANGUAGE and SUBTITLE_LANGUAGE != "auto":
-                api_kwargs['language'] = SUBTITLE_LANGUAGE
+                api_kwargs['language_hints'] = [SUBTITLE_LANGUAGE]
+            else:
+                api_kwargs['language_hints'] = ["zh", "en"]  # 默认支持中英文
             
             # 添加热词配置（如果已设置）
             if vocabulary_id and isinstance(vocabulary_id, str) and len(vocabulary_id) > 0:
                 logger.info(f"应用热词配置: {vocabulary_id[:5]}{'...' if len(vocabulary_id) > 5 else ''}")
-                api_kwargs['hot_words'] = vocabulary_id
+                api_kwargs['vocabulary_id'] = vocabulary_id
             
-            # 如果是本地文件，需要先上传到可访问的URL
-            file_url = None
-            if not is_url:
-                # 首先预处理提取音频文件
-                audio_file = self._preprocess_video_file(video_file)
-                if not audio_file:
-                    logger.error(f"预处理视频失败，无法提取音频: {video_file}")
-                    return self._fallback_subtitle_generation(video_file)
+            # 上传音频文件到可访问的URL
+            audio_url = None
+            if ENABLE_OSS and OSS_AVAILABLE:
+                audio_url = self._upload_to_accessible_url(audio_file)
+                if not audio_url:
+                    logger.warning("上传音频文件到OSS失败，尝试直接使用本地文件")
+            
+            if not audio_url:
+                # 如果无法上传到OSS，创建一个临时的HTTP服务来提供音频文件
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                temp_dir = os.path.join('data', 'temp', 'audio_server', timestamp)
+                os.makedirs(temp_dir, exist_ok=True)
                 
-                if not os.path.exists(audio_file) or os.path.getsize(audio_file) == 0:
-                    logger.error(f"生成的音频文件不存在或为空: {audio_file}")
-                    return self._fallback_subtitle_generation(video_file)
+                temp_audio_file = os.path.join(temp_dir, os.path.basename(audio_file))
+                import shutil
+                shutil.copy2(audio_file, temp_audio_file)
                 
-                file_url = self._upload_to_accessible_url(audio_file)
-                if not file_url:
-                    logger.error(f"无法创建可访问的URL: {audio_file}")
-                    return self._fallback_subtitle_generation(video_file)
-                
-                logger.info(f"音频文件已上传到: {file_url}")
-                video_url = file_url
-            else:
-                # 直接使用现有URL
-                video_url = video_file
-                logger.info(f"使用OSS URL: {video_url}")
+                # 创建公网可访问的临时URL
+                # 注意：这里需要有一个可公网访问的服务来提供这个文件
+                # 在实际应用中，应当使用OSS或其他云存储
+                logger.warning("无法创建可公网访问的音频URL，语音识别可能会失败")
+                return []
             
-            # 检查URL是否有效
-            if not video_url or len(video_url.strip()) == 0:
-                logger.error("视频URL为空")
-                return self._fallback_subtitle_generation(video_file)
+            # 设置文件URL
+            api_kwargs['file_urls'] = [audio_url]
             
-            # 修复格式化问题，对字典使用repr()避免嵌套花括号问题
-            logger.info(f"DashScope Paraformer API调用参数: model_id={model_id}, file_urls=[{repr(video_url)}], kwargs={repr(api_kwargs)}")
-            
-            # 调用DashScope API
-            start_time = time.time()
             try:
-                # 使用正确的API调用方式，根据API文档传递参数
-                response = dashscope.audio.asr.transcription.Transcription.call(
-                    model=model_id,
-                    file_urls=[video_url],  # API要求提供file_urls列表
-                    **api_kwargs  # 直接传递所有参数，而不是通过params字典
-                )
+                # 使用录音文件识别API
+                api_start_time = time.time()
                 
-                api_time = time.time() - start_time
-                logger.info(f"DashScope API调用完成，耗时: {api_time:.2f}秒")
+                logger.info(f"开始调用DashScope录音文件识别API... 参数: {api_kwargs}")
                 
-                # 检查接口状态返回值
-                if not hasattr(response, 'status_code'):
-                    logger.error("API响应格式异常，缺少status_code字段")
-                    return self._fallback_subtitle_generation(video_file)
+                # 调用Transcription.async_call方法提交任务
+                from dashscope.audio.asr import Transcription
+                task_response = Transcription.async_call(**api_kwargs)
                 
-                # 检查HTTP状态码
-                if response.status_code != 200:
-                    # 记录API错误详情
-                    error_code = response.status_code
-                    error_msg = getattr(response, 'message', '未知错误')
-                    error_detail = response.output.get('error', {}) if hasattr(response, 'output') and response.output else {}
-                    
-                    logger.error(f"Paraformer API调用失败: 状态码={error_code}, 消息={error_msg}, 详情={error_detail}")
-                    return self._fallback_subtitle_generation(video_file)
-                
-                # 检查输出字段是否存在
-                if not hasattr(response, 'output') or not response.output:
-                    logger.error("API响应缺少output字段")
-                    return self._fallback_subtitle_generation(video_file)
-                
-                # 检查结果字段是否存在
-                if 'results' not in response.output:
-                    logger.error("API响应中缺少results字段")
-                    return self._fallback_subtitle_generation(video_file)
-                
-                # 提取结果
-                results = response.output['results']
-                if not results or len(results) == 0:
-                    logger.error("识别结果为空")
-                    return self._fallback_subtitle_generation(video_file)
-                
-                # 处理识别结果 - 转换为字幕格式
-                subtitles = []
-                file_result = results[0]  # 取第一个文件的结果
-                
-                if 'sentences' not in file_result:
-                    logger.error("API响应中缺少sentences字段")
-                    return self._fallback_subtitle_generation(video_file)
-                
-                if len(file_result['sentences']) == 0:
-                    logger.warning("识别结果中没有句子")
+                if task_response.status_code != 200:
+                    logger.error(f"DashScope API调用失败: 状态码={task_response.status_code}, 消息={task_response.message}")
                     return []
                 
-                for i, sentence in enumerate(file_result['sentences']):
-                    # 计算开始和结束时间（毫秒转秒）
-                    start_time = sentence.get('begin_time', 0) / 1000 if 'begin_time' in sentence else 0
-                    end_time = sentence.get('end_time', 0) / 1000 if 'end_time' in sentence else 0
-                    
-                    # 检查时间是否有效
-                    if end_time < start_time:
-                        logger.warning(f"句子时间异常: 结束时间({end_time}秒)早于开始时间({start_time}秒)")
-                        end_time = start_time + 1.0  # 强制设置一个合理值
-                    
-                    # 格式化时间
-                    start_formatted = self._format_time(start_time)
-                    end_formatted = self._format_time(end_time)
-                    
-                    # 检查文本是否为空
-                    text = sentence.get('text', '').strip()
-                    if not text:
-                        logger.warning(f"跳过空文本句子，时间段: {start_formatted} - {end_formatted}")
+                # 获取任务ID
+                task_id = task_response.output.task_id
+                logger.info(f"成功提交语音识别任务，任务ID: {task_id}")
+                
+                # 等待任务完成
+                logger.info("等待语音识别任务完成...")
+                transcribe_response = Transcription.wait(task=task_id)
+                
+                api_time = time.time() - api_start_time
+                logger.info(f"DashScope API调用完成，耗时: {api_time:.2f}秒")
+                
+                # 检查任务状态
+                if transcribe_response.status_code != 200:
+                    logger.error(f"DashScope API响应错误: 状态码={transcribe_response.status_code}, 消息={transcribe_response.message}")
+                    return []
+                
+                # 验证任务是否成功
+                if transcribe_response.output.task_status != "SUCCEEDED":
+                    logger.error(f"语音识别任务未成功完成: 状态={transcribe_response.output.task_status}")
+                    return []
+                
+                # 处理结果
+                process_start = time.time()
+                subtitles = []
+                
+                # 检查结果是否存在
+                if not hasattr(transcribe_response.output, 'results') or not transcribe_response.output.results:
+                    logger.error("API响应中没有results字段")
+                    return []
+                
+                # 获取转写结果URL
+                results = transcribe_response.output.results
+                if not results or len(results) == 0:
+                    logger.error("API响应中results为空")
+                    return []
+                
+                # 处理每个文件的结果
+                for file_result in results:
+                    # 检查子任务状态
+                    if file_result.get('subtask_status') != "SUCCEEDED":
+                        logger.warning(f"文件处理未成功: {file_result.get('file_url')}, 状态: {file_result.get('subtask_status')}")
                         continue
                     
-                    subtitles.append({
-                        "index": i,
-                        "start": start_time,
-                        "end": end_time,
-                        "start_formatted": start_formatted,
-                        "end_formatted": end_formatted,
-                        "timestamp": start_formatted,
-                        "duration": end_time - start_time,
-                        "text": text
-                    })
+                    # 获取转写结果URL
+                    transcription_url = file_result.get('transcription_url')
+                    if not transcription_url:
+                        logger.warning(f"文件没有转写结果URL: {file_result.get('file_url')}")
+                        continue
+                    
+                    # 下载转写结果
+                    try:
+                        logger.info(f"下载转写结果: {transcription_url}")
+                        response = requests.get(transcription_url, timeout=30)
+                        response.raise_for_status()
+                        
+                        # 解析JSON结果
+                        transcript_data = response.json()
+                        
+                        # 提取字幕数据
+                        if 'transcripts' not in transcript_data:
+                            logger.warning(f"转写结果中没有transcripts字段: {file_result.get('file_url')}")
+                            continue
+                        
+                        # 处理每个转写结果
+                        for transcript in transcript_data['transcripts']:
+                            channel_id = transcript.get('channel_id', 0)
+                            
+                            # 处理每个句子
+                            for i, sentence in enumerate(transcript.get('sentences', [])):
+                                # 计算开始和结束时间（毫秒转秒）
+                                begin_time_ms = sentence.get('begin_time', 0)
+                                end_time_ms = sentence.get('end_time', 0)
+                                
+                                # 转换为秒
+                                start_time_sec = begin_time_ms / 1000.0
+                                end_time_sec = end_time_ms / 1000.0
+                                
+                                # 检查时间是否有效
+                                if end_time_sec < start_time_sec:
+                                    logger.warning(f"句子时间异常: 结束时间({end_time_sec}秒)早于开始时间({start_time_sec}秒)")
+                                    end_time_sec = start_time_sec + 1.0  # 强制设置一个合理值
+                                
+                                # 格式化时间
+                                start_formatted = self._format_time(start_time_sec)
+                                end_formatted = self._format_time(end_time_sec)
+                                
+                                # 检查文本是否为空
+                                text = sentence.get('text', '').strip()
+                                if not text:
+                                    logger.warning(f"跳过空文本句子，时间段: {start_formatted} - {end_formatted}")
+                                    continue
+                                
+                                # 获取说话人ID
+                                speaker_id = sentence.get('speaker_id', 0)
+                                
+                                subtitles.append({
+                                    "index": i,
+                                    "start": start_time_sec,
+                                    "end": end_time_sec,
+                                    "start_formatted": start_formatted,
+                                    "end_formatted": end_formatted,
+                                    "timestamp": start_formatted,
+                                    "duration": end_time_sec - start_time_sec,
+                                    "text": text,
+                                    "speaker_id": speaker_id,
+                                    "channel_id": channel_id
+                                })
+                    except Exception as e:
+                        logger.error(f"下载或解析转写结果失败: {str(e)}")
+                        continue
+                
+                process_time = time.time() - process_start
                 
                 if len(subtitles) == 0:
                     logger.warning("处理后的字幕列表为空")
                     return []
                 
-                logger.info(f"成功从视频中提取了{len(subtitles)}条字幕")
+                # 按时间排序
+                subtitles.sort(key=lambda x: x['start'])
                 
-                # 清理临时文件
-                if not is_url and audio_file and os.path.exists(audio_file):
-                    try:
-                        os.remove(audio_file)
-                        logger.info(f"已清理临时音频文件: {audio_file}")
-                    except Exception as e:
-                        logger.warning(f"清理临时音频文件失败: {e}")
+                total_time = time.time() - start_time
+                logger.info(f"成功从视频中提取了{len(subtitles)}条字幕，总耗时: {total_time:.2f}秒 (预处理: {preprocess_time:.2f}秒, API调用: {api_time:.2f}秒, 结果处理: {process_time:.2f}秒)")
                 
                 return subtitles
-                
+            
             except Exception as api_error:
                 # 捕获API调用异常
-                api_time = time.time() - start_time
-                error_msg = str(api_error)
-                logger.exception(f"DashScope API调用异常，耗时: {api_time:.2f}秒, 错误: {error_msg}")
-                
-                # 分析错误类型，提供更有用的错误信息
-                if "file_urls" in error_msg:
-                    logger.error("DashScope API参数错误: file_urls参数不正确。请检查API文档以获取最新参数格式。")
-                elif "permissions" in error_msg.lower() or "denied" in error_msg.lower():
-                    logger.error("DashScope API访问被拒绝，请检查API密钥是否有效。")
-                elif "not found" in error_msg.lower():
-                    logger.error(f"找不到指定的模型: {model_id}，请检查模型名称是否正确。")
-                elif "timeout" in error_msg.lower():
-                    logger.error("DashScope API调用超时，请检查网络连接或稍后重试。")
-                elif "format" in error_msg.lower():
-                    logger.error(f"音频格式不受支持，当前格式: {self._get_audio_format(video_file)}。请转换为受支持的格式。")
-                elif "local file" in error_msg.lower() or "url" in error_msg.lower():
-                    logger.error("DashScope API不支持直接处理本地文件URL，请配置OSS或其他云存储。")
-                
-                return self._fallback_subtitle_generation(video_file)
-            finally:
-                # 确保清理临时文件，即使发生异常
-                if not is_url and audio_file and os.path.exists(audio_file):
-                    try:
-                        os.remove(audio_file)
-                        logger.info(f"已清理临时音频文件: {audio_file}")
-                    except Exception as e:
-                        logger.warning(f"清理临时音频文件失败: {e}")
-        
+                logger.exception(f"DashScope API调用异常: {str(api_error)}")
+                return []
+            
         except Exception as e:
             # 捕获所有其他异常
             logger.exception(f"提取字幕过程中发生未预期的错误: {str(e)}")
-            
-            # 确保清理临时文件，即使发生异常
-            if audio_file and os.path.exists(audio_file):
-                try:
-                    os.remove(audio_file)
-                    logger.info(f"已清理临时音频文件: {audio_file}")
-                except Exception as cleanup_error:
-                    logger.warning(f"清理临时音频文件失败: {cleanup_error}")
-                    
-            return self._fallback_subtitle_generation(video_file)
-    
-    def _fallback_subtitle_generation(self, video_file: str) -> List[Dict[str, Any]]:
-        """
-        回退方案：当主要字幕提取方法失败时使用
-        
-        参数:
-            video_file: 视频文件路径
-            
-        返回:
-            字幕信息列表，失败时返回带有错误提示的占位字幕
-        """
-        try:
-            logger.warning(f"正在使用回退方案提取字幕: {video_file}")
-            
-            # 检查输入参数
-            if not video_file:
-                logger.error("视频文件路径为空")
-                return []
-            
-            # 检查是否为URL
-            is_url = video_file.startswith(('http://', 'https://'))
-            
-            # 如果不是URL，检查文件是否存在
-            if not is_url and not os.path.exists(video_file):
-                logger.error(f"回退方案：视频文件不存在: {video_file}")
-                return []
-            
-            # 尝试获取视频时长作为占位符数据的参考
-            try:
-                video_info = self._get_video_info(video_file)
-                duration = video_info.get('duration', 0)
-                if duration <= 0:
-                    logger.warning("视频时长无效，使用默认值60秒")
-                    duration = 60
-            except Exception as e:
-                logger.warning(f"获取视频信息失败: {str(e)}，使用默认时长60秒")
-                duration = 60
-            
-            logger.info(f"生成回退方案的占位符字幕，视频时长: {duration}秒")
-            
-            # 生成简单的占位符字幕
-            num_segments = min(max(int(duration / 10), 1), 10)  # 最少1个，最多10个分段
-            segment_duration = duration / num_segments
-            
-            subtitles = []
-            for i in range(num_segments):
-                start_time = i * segment_duration
-                end_time = (i + 1) * segment_duration
-                
-                # 格式化时间
-                start_formatted = self._format_time(start_time)
-                end_formatted = self._format_time(end_time)
-                
-                subtitles.append({
-                    "index": i,
-                    "start": start_time,
-                    "end": end_time,
-                    "start_formatted": start_formatted,
-                    "end_formatted": end_formatted,
-                    "timestamp": start_formatted,
-                    "duration": end_time - start_time,
-                    "text": f"[无法识别的内容 #{i+1}]"
-                })
-            
-            logger.info(f"成功生成回退方案占位符字幕，共{len(subtitles)}条")
-            return subtitles
-            
-        except Exception as e:
-            logger.exception(f"回退字幕提取也失败了: {str(e)}")
-            
-            # 返回一个最小的占位符字幕
-            return [{
-                "index": 0,
-                "start": 0,
-                "end": 60,
-                "start_formatted": "00:00:00.000",
-                "end_formatted": "00:01:00.000",
-                "timestamp": "00:00:00.000",
-                "duration": 60,
-                "text": "[语音识别失败，请尝试其他视频或稍后重试]"
-            }]
+            return []
+        finally:
+            # 确保清理临时文件，无论是否发生异常
+            self._cleanup_temp_files(audio_file)
     
     def _preprocess_video_file(self, video_file: str) -> Optional[str]:
         """
@@ -551,9 +625,23 @@ class VideoProcessor:
         返回:
             提取的音频文件路径，失败时返回None
         """
+        start_time = time.time()
         logger.info(f"开始预处理视频文件: {video_file}")
         
         try:
+            # 检查缓存中是否有此视频的处理记录
+            cache_key = self._get_cache_key(video_file)
+            if cache_key in self.audio_cache:
+                cached_audio_path = self.audio_cache[cache_key]
+                if os.path.exists(cached_audio_path):
+                    logger.info(f"检测到音频缓存，直接使用已处理的音频文件: {cached_audio_path}")
+                    return cached_audio_path
+                else:
+                    # 缓存文件不存在，删除无效记录
+                    logger.warning(f"缓存的音频文件不存在，将重新处理: {cached_audio_path}")
+                    del self.audio_cache[cache_key]
+                    self._save_audio_cache()
+            
             # 检查是否为URL
             is_url = video_file.startswith(('http://', 'https://'))
             
@@ -579,16 +667,94 @@ class VideoProcessor:
                     logger.error(f"无权限读取视频文件: {video_file}")
                     return None
             
+            # 准备文件名和路径
+            timestamp = int(time.time())
+            
             # 生成临时音频文件名
-            file_name = os.path.basename(video_file) if not is_url else f"remote_video_{int(time.time())}"
-            audio_file = os.path.join(VIDEO_TEMP_DIR, f"{os.path.splitext(file_name)[0]}_{int(time.time())}.wav")
+            if is_url:
+                # 检查视频URL是否已缓存
+                video_cache_key = self._get_video_cache_key(video_file)
+                
+                if video_cache_key in self.video_cache:
+                    cached_video_path = self.video_cache[video_cache_key]
+                    if os.path.exists(cached_video_path):
+                        logger.info(f"检测到视频缓存，直接使用已下载的视频文件: {cached_video_path}")
+                        video_file = cached_video_path
+                    else:
+                        # 缓存文件不存在，删除无效记录
+                        logger.warning(f"缓存的视频文件不存在，将重新下载: {cached_video_path}")
+                        del self.video_cache[video_cache_key]
+                        self._save_video_cache()
+                
+                # 如果需要下载视频
+                if video_file.startswith(('http://', 'https://')):
+                    # 如果是远程URL，先下载到本地再处理
+                    download_dir = os.path.join('data', 'temp', 'videos', 'downloaded')
+                    os.makedirs(download_dir, exist_ok=True)
+                    
+                    # 获取URL中的文件名，如果没有则使用时间戳
+                    url_path = urllib.parse.urlparse(video_file).path
+                    file_name = os.path.basename(url_path) or f"video_{timestamp}"
+                    local_video_path = os.path.join(download_dir, file_name)
+                    
+                    download_start = time.time()
+                    logger.info(f"开始从URL下载视频: {video_file} -> {local_video_path}")
+                    
+                    # 使用requests下载文件，显示进度
+                    try:
+                        with requests.get(video_file, stream=True, timeout=30) as r:
+                            r.raise_for_status()
+                            total_size = int(r.headers.get('content-length', 0))
+                            
+                            # 显示文件大小
+                            size_mb = total_size / (1024 * 1024)
+                            logger.info(f"视频文件大小: {size_mb:.2f} MB")
+                            
+                            # 下载文件，每10%显示一次进度
+                            downloaded = 0
+                            last_percent = 0
+                            with open(local_video_path, 'wb') as f:
+                                for chunk in r.iter_content(chunk_size=8192):
+                                    if chunk:
+                                        f.write(chunk)
+                                        downloaded += len(chunk)
+                                        
+                                        # 计算并显示下载进度
+                                        if total_size > 0:
+                                            percent = int(downloaded * 100 / total_size)
+                                            if percent >= last_percent + 10:
+                                                logger.info(f"下载进度: {percent}%")
+                                                last_percent = percent
+                            
+                            download_time = time.time() - download_start
+                            logger.info(f"视频下载完成: {local_video_path}，耗时: {download_time:.2f}秒")
+                            
+                            # 添加到视频缓存
+                            self.video_cache[video_cache_key] = local_video_path
+                            self._save_video_cache()
+                            
+                            # 使用本地文件路径替换远程URL
+                            video_file = local_video_path
+                    except Exception as download_error:
+                        logger.error(f"下载视频文件失败: {str(download_error)}")
+                        return None
+            
+            # 生成临时音频文件名 - 使用视频文件名和哈希值作为唯一标识
+            file_name = os.path.basename(video_file)
+            file_base = os.path.splitext(file_name)[0]
+            
+            # 将临时音频文件放入缓存目录，而不是临时目录，便于复用
+            cache_dir = os.path.join('data', 'cache', 'audio')
+            os.makedirs(cache_dir, exist_ok=True)
+            audio_file = os.path.join(cache_dir, f"{file_base}_{timestamp}.wav")
             
             # 确保临时目录存在
             os.makedirs(os.path.dirname(audio_file), exist_ok=True)
             
             # 使用ffmpeg提取音频
             try:
-                # 构建ffmpeg命令
+                extract_start = time.time()
+                # 构建优化的ffmpeg命令
                 cmd = [
                     'ffmpeg',
                     '-y',  # 覆盖输出文件
@@ -596,7 +762,8 @@ class VideoProcessor:
                     '-vn',  # 禁用视频
                     '-ar', '16000',  # 采样率16kHz
                     '-ac', '1',  # 单声道
-                    '-ab', '256k',  # 音频比特率
+                    '-c:a', 'pcm_s16le',  # 直接指定编解码器
+                    '-q:a', '0',  # 使用质量参数代替比特率
                     '-f', 'wav',  # wav格式
                     audio_file  # 输出文件
                 ]
@@ -619,12 +786,24 @@ class VideoProcessor:
                     logger.error(f"错误输出: {result.stderr}")
                     return None
                 
+                extract_time = time.time() - extract_start
+                logger.info(f"音频提取完成，耗时: {extract_time:.2f}秒")
+                
                 # 验证输出文件是否正确生成
                 if not os.path.exists(audio_file) or os.path.getsize(audio_file) == 0:
                     logger.error(f"输出的音频文件不存在或为空: {audio_file}")
                     return None
                 
                 logger.info(f"成功提取音频到: {audio_file}")
+                
+                # 将音频文件路径添加到缓存
+                self.audio_cache[cache_key] = audio_file
+                self._save_audio_cache()
+                logger.info(f"已将音频文件添加到缓存: {cache_key} -> {audio_file}")
+                
+                total_time = time.time() - start_time
+                logger.info(f"视频预处理完成，总耗时: {total_time:.2f}秒")
+                
                 return audio_file
                 
             except Exception as e:
@@ -673,8 +852,7 @@ class VideoProcessor:
     
     def _upload_to_accessible_url(self, file_path: str) -> Optional[str]:
         """
-        将文件上传到阿里云OSS并返回可公网访问的URL，
-        或在OSS不可用时创建临时可访问的本地URL
+        上传文件到OSS并获取公网可访问的URL
         
         参数:
             file_path: 本地文件路径
@@ -683,90 +861,25 @@ class VideoProcessor:
             公网可访问的URL，上传失败则返回None
         """
         try:
-            # 检查是否启用了OSS
-            if ENABLE_OSS and OSS_AVAILABLE:
-                # 检查OSS配置是否完整
-                if not all([OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME, OSS_ENDPOINT]):
-                    logger.error("阿里云OSS配置不完整，请检查环境变量")
-                    return self._create_local_accessible_url(file_path)
-                
-                # 初始化OSS客户端
-                auth = oss2.Auth(OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET)
-                
-                # 根据阿里云最佳实践，使用与Paraformer API同地域的OSS端点
-                # 当前Paraformer部署地域：华北2（北京，cn-beijing）
-                # 使用内网域名，避免产生不必要的OSS网络流量费用
-                bucket_endpoint = OSS_ENDPOINT.replace('oss-cn-beijing.aliyuncs.com', 'oss-cn-beijing-internal.aliyuncs.com')
-                bucket = oss2.Bucket(auth, bucket_endpoint, OSS_BUCKET_NAME)
-                
-                # 生成OSS文件路径
-                file_name = os.path.basename(file_path)
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                oss_file_path = f"{OSS_UPLOAD_DIR}/{timestamp}_{file_name}"
-                
-                # 上传文件到OSS
-                logger.info(f"正在上传文件到阿里云OSS: {oss_file_path}")
-                result = bucket.put_object_from_file(oss_file_path, file_path)
-                
-                # 检查上传结果
-                if result.status == 200:
-                    # 生成公网访问URL
-                    public_url = OSS_PUBLIC_URL_TEMPLATE.format(
-                        bucket=OSS_BUCKET_NAME,
-                        endpoint=OSS_ENDPOINT,
-                        key=oss_file_path
-                    )
-                    logger.info(f"文件成功上传到OSS: {public_url}")
-                    return public_url
-                else:
-                    logger.error(f"上传文件到OSS失败: {result.status}")
-                    return self._create_local_accessible_url(file_path)
+            # 使用OssHandler上传文件
+            from utils.oss_handler import OssHandler
+            
+            # 初始化OssHandler
+            oss_handler = OssHandler()
+            
+            # 创建可访问URL
+            logger.info(f"开始上传文件到OSS: {file_path}")
+            url = oss_handler.create_accessible_url(file_path)
+            
+            if url:
+                logger.info(f"成功上传文件到OSS: {url}")
+                return url
             else:
-                # OSS不可用，尝试创建本地可访问URL
-                logger.warning("阿里云OSS未启用或模块不可用，尝试创建本地可访问URL")
-                return self._create_local_accessible_url(file_path)
+                logger.error("通过OssHandler上传文件失败")
+                return None
                 
         except Exception as e:
             logger.error(f"上传文件到OSS出错: {str(e)}")
-            return self._create_local_accessible_url(file_path)
-    
-    def _create_local_accessible_url(self, file_path: str) -> Optional[str]:
-        """
-        创建本地文件的可访问URL，在OSS不可用时使用
-        
-        参数:
-            file_path: 本地文件路径
-            
-        返回:
-            本地可访问的URL，创建失败则返回None
-        """
-        try:
-            # 创建一个简单的文件URL，此方法在实际应用中需要配合本地服务器使用
-            # 如果是在本地开发环境，可以使用file://协议
-            # 但注意：DashScope模块可能无法处理file://协议的URL
-            
-            # 复制文件到临时目录并命名为可预测的名称
-            file_name = os.path.basename(file_path)
-            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-            temp_dir = os.path.join(VIDEO_TEMP_DIR, timestamp)
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            temp_file_path = os.path.join(temp_dir, file_name)
-            # 复制文件
-            import shutil
-            shutil.copy2(file_path, temp_file_path)
-            
-            # 创建文件URL，对于真实应用，这应该是一个可以通过公网访问的URL
-            # 改为返回直接文件路径而非file://协议，作为备用方案尝试
-            # 新版本dashscope可能支持直接读取本地文件
-            file_url = os.path.abspath(temp_file_path)
-            
-            logger.info(f"创建本地文件路径: {file_url}")
-            logger.warning("注意：在生产环境中应配置OSS或其他云存储以获得更可靠的音频识别")
-            
-            return file_url
-        except Exception as e:
-            logger.error(f"创建本地文件URL出错: {str(e)}")
             return None
     
     def _format_time(self, seconds: float) -> str:
@@ -1025,7 +1138,7 @@ class VideoProcessor:
                 "text": text
             })
         
-        return subtitles 
+        return subtitles
     
     def _get_audio_format(self, file_path: str) -> str:
         """
@@ -1091,12 +1204,15 @@ class VideoProcessor:
             
             # 确定输出目录
             output_dir = os.path.join(settings.OUTPUT_DIR, 'subtitles')
+            logger.info(f"字幕将保存到目录: {output_dir}")
             os.makedirs(output_dir, exist_ok=True)
             
             # 生成输出文件名（添加时间戳）
             timestamp = time.strftime("%Y%m%d%H%M%S", time.localtime())
             output_filename = f"{video_name}_{timestamp}.csv"
             output_csv = os.path.join(output_dir, output_filename)
+            
+            logger.info(f"将保存 {len(subtitles)} 条字幕到文件: {output_csv}")
             
             # 将字幕数据转换为DataFrame
             data = []
@@ -1116,9 +1232,119 @@ class VideoProcessor:
             df = pd.DataFrame(data)
             df.to_csv(output_csv, index=False, encoding='utf-8')
             
-            logger.info(f"字幕数据成功保存到CSV: {output_csv}")
-            return output_csv
+            # 验证文件是否成功保存
+            if os.path.exists(output_csv) and os.path.getsize(output_csv) > 0:
+                logger.info(f"字幕数据成功保存到CSV: {output_csv}")
+                return output_csv
+            else:
+                logger.error(f"字幕CSV文件创建失败或为空: {output_csv}")
+                return ""
         
         except Exception as e:
             logger.exception(f"保存字幕到CSV失败: {str(e)}")
-            return "" 
+            return ""
+    
+    def _load_video_cache(self):
+        """加载已下载的视频缓存记录"""
+        cache_path = os.path.join('data', 'cache', 'video_cache.json')
+        try:
+            if os.path.exists(cache_path):
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    self.video_cache = json.load(f)
+                logger.info(f"已加载{len(self.video_cache)}条视频缓存记录")
+            else:
+                self.video_cache = {}
+        except Exception as e:
+            logger.warning(f"加载视频缓存记录失败: {str(e)}")
+            self.video_cache = {}
+    
+    def _save_video_cache(self):
+        """保存视频缓存记录"""
+        cache_path = os.path.join('data', 'cache', 'video_cache.json')
+        try:
+            # 确保缓存目录存在
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(self.video_cache, f, ensure_ascii=False, indent=2)
+            logger.info(f"已保存{len(self.video_cache)}条视频缓存记录")
+        except Exception as e:
+            logger.warning(f"保存视频缓存记录失败: {str(e)}")
+    
+    def _get_video_cache_key(self, video_url: str) -> str:
+        """获取视频URL的缓存键"""
+        # 对于URL，使用最后一部分作为键
+        try:
+            url_path = urllib.parse.urlparse(video_url).path
+            file_name = os.path.basename(url_path)
+            return file_name
+        except:
+            # 如果解析失败，使用完整URL
+            return video_url
+
+    def cleanup_downloaded_videos(self, video_file: str) -> None:
+        """
+        清理下载的视频文件
+        
+        参数:
+            video_file: 视频文件路径或URL
+        """
+        try:
+            if not video_file:
+                return
+            
+            # 判断是否为URL
+            if video_file.startswith(('http://', 'https://')):
+                # 尝试获取下载的本地文件路径
+                video_cache_key = self._get_video_cache_key(video_file)
+                logger.info(f"清理视频，缓存键: {video_cache_key}")
+                
+                # 从缓存中获取本地文件路径
+                if video_cache_key in self.video_cache:
+                    local_path = self.video_cache[video_cache_key]
+                    logger.info(f"尝试清理下载的视频文件(从缓存): {local_path}")
+                    
+                    # 检查文件是否存在
+                    if os.path.exists(local_path):
+                        os.remove(local_path)
+                        logger.info(f"已成功删除下载的视频文件: {local_path}")
+                        
+                        # 从缓存中删除记录
+                        del self.video_cache[video_cache_key]
+                        self._save_video_cache()
+                        logger.info(f"已从视频缓存中移除记录: {video_cache_key}")
+                    else:
+                        logger.warning(f"视频文件不存在，无需清理: {local_path}")
+                else:
+                    logger.warning(f"视频缓存中没有找到记录: {video_cache_key}")
+                
+                # 尝试直接根据URL构造可能的文件路径
+                url_path = urllib.parse.urlparse(video_file).path
+                file_name = os.path.basename(url_path)
+                logger.info(f"URL路径分析: {url_path} -> 文件名: {file_name}")
+                
+                # 检查多个可能的位置
+                possible_paths = [
+                    os.path.join('data', 'temp', 'videos', 'downloaded', file_name),
+                    os.path.join(os.getcwd(), 'data', 'temp', 'videos', 'downloaded', file_name),
+                    os.path.abspath(os.path.join('data', 'temp', 'videos', 'downloaded', file_name))
+                ]
+                
+                for possible_path in possible_paths:
+                    logger.info(f"检查临时文件位置: {possible_path}")
+                    if os.path.exists(possible_path):
+                        try:
+                            os.remove(possible_path)
+                            logger.info(f"已成功删除下载的视频文件(直接路径): {possible_path}")
+                            break
+                        except Exception as e:
+                            logger.warning(f"删除文件失败: {possible_path}, 错误: {str(e)}")
+                else:
+                    logger.warning(f"未找到下载的视频文件: {file_name}")
+            
+            # 对于本地文件，不需要清理
+            else:
+                logger.debug(f"本地视频文件无需清理: {video_file}")
+            
+        except Exception as e:
+            logger.warning(f"清理下载视频文件时出错: {str(e)}") 
