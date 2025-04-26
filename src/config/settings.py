@@ -8,12 +8,82 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
+from datetime import datetime
+import uuid
 
 load_dotenv()
 
+# 获取项目根目录的绝对路径
+ROOT_DIR = Path(__file__).parents[2].absolute()
+
+# 视频与音频相关路径
+DATA_DIR = ROOT_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+CACHE_DIR = DATA_DIR / "cache"
+CACHE_DIR.mkdir(exist_ok=True)
+
+AUDIO_CACHE_DIR = CACHE_DIR / "audio"
+AUDIO_CACHE_DIR.mkdir(exist_ok=True)
+
+VIDEO_CACHE_DIR = CACHE_DIR / "videos"
+VIDEO_CACHE_DIR.mkdir(exist_ok=True)
+
+OUTPUT_DIR = DATA_DIR / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+EXPORT_DIR = DATA_DIR / "exports"
+EXPORT_DIR.mkdir(exist_ok=True)
+
+# 分析维度相关路径
+DIMENSIONS_DIR = DATA_DIR / "dimensions"
+DIMENSIONS_DIR.mkdir(exist_ok=True)
+
+# 热词与词典路径
+HOTWORDS_DIR = DATA_DIR / "hotwords"
+HOTWORDS_DIR.mkdir(exist_ok=True)
+
+# 日志相关配置
+LOG_DIR = ROOT_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_LEVEL = logging.INFO
+LOG_FILE = LOG_DIR / f"app_{datetime.now().strftime('%Y%m%d')}.log"
+
+# 错误视频日志目录
+ERROR_VIDEO_LOG_DIR = LOG_DIR / "video_errors"
+ERROR_VIDEO_LOG_DIR.mkdir(exist_ok=True)
+
+# API配置
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+
+# 服务配置
+DEFAULT_PORT = 8506
+MAX_VIDEO_DURATION = 600  # 最大视频处理时长（秒）
+MAX_VIDEO_SIZE = 500 * 1024 * 1024  # 最大视频大小（字节）
+DEFAULT_VIDEO_SEGMENT_DURATION = 5  # 默认视频分段时长（秒）
+ASR_OUTPUT_FORMAT = "vtt"
+
+# 特性开关
+ENABLE_OSS = False  # 是否启用阿里云OSS
+ENABLE_DASHSCOPE = True  # 是否启用DashScope
+ENABLE_LOCAL_CHUNK = True  # 是否开启本地分段处理
+ENABLE_AUTO_SEGMENT = True  # 是否自动分段视频
+
+# 会话ID
+SESSION_ID = str(uuid.uuid4())
+
+# API 模型配置
+DASHSCOPE_ASR_MODEL = "paraformer-v2"
+DASHSCOPE_ASR_SAMPLE_RATE = 16000
+
+# 文件导出配置
+CSV_DELIMITER = ","
+CSV_QUOTECHAR = '"'
+
 # 基础目录设置
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = os.path.join(BASE_DIR, 'data')
 TEMP_DIR = os.path.join(DATA_DIR, 'temp')
 
 # 确保必要目录存在
@@ -61,11 +131,6 @@ os.makedirs(VIDEO_SUBTITLE_DIR, exist_ok=True)
 VIDEO_ANALYSIS_DIR = os.path.join(VIDEO_PROCESSING_DIR, 'analysis')
 os.makedirs(VIDEO_ANALYSIS_DIR, exist_ok=True)
 
-# 日志配置
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-
 # 视频错误日志目录
 VIDEO_ERROR_LOG_DIR = os.path.join(LOG_DIR, 'video_errors')
 os.makedirs(VIDEO_ERROR_LOG_DIR, exist_ok=True)
@@ -101,7 +166,6 @@ ENABLE_OSS = os.environ.get('ENABLE_OSS', 'False').lower() in ('true', '1', 't')
 
 # API密钥配置
 API_KEY = os.environ.get('API_KEY', 'default_key_for_development')
-DASHSCOPE_API_KEY = os.environ.get('DASHSCOPE_API_KEY', '')
 
 # 语音识别配置
 PARAFORMER_MODEL_VERSION = os.environ.get('PARAFORMER_MODEL_VERSION', 'v2')  # 'v1', 'v2' 等版本

@@ -300,6 +300,16 @@ def process_video_analysis(file, analysis_type, dimensions=None, keywords=None):
             status_text.error(f"保存结果失败: {str(e)}")
             return None, None
 
+        # 清理临时文件
+        try:
+            # 清理下载的视频文件
+            processor.cleanup_downloaded_videos(file)
+            # 清理可能存在的临时音频文件
+            # 注意：audio_file变量在此处不可用，所以不再尝试清理
+            logger.info("已清理临时视频文件")
+        except Exception as e:
+            logger.warning(f"清理临时文件失败: {str(e)}")
+
         # 分析完成
         progress_bar.progress(1.0, text='分析完成！')
         if 'analysis_method' in results:
