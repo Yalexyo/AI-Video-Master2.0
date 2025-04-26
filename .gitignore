@@ -65,3 +65,16 @@ htmlcov/
 # Distribution / packaging
 .env
 .env.test
+
+# 分析结果和临时文件
+data/processed/analysis/results/
+data/processed/subtitles/
+data/exports/
+
+# 敏感文件和密钥
+docs/AccessKey.csv
+docs/*Key*.csv
+docs/*Secret*.csv
+**/credentials.json
+**/*secret*.json
+**/*token*.json
