@@ -122,7 +122,7 @@ def inject_sidebar_style():
 
 def create_sidebar_navigation(active_page="热词管理"):
     """
-    在侧边栏创建导航菜单，只显示三个选项
+    在侧边栏创建导航菜单，只显示两个选项
     使用自定义HTML显示当前活动页面，使用Streamlit按钮实现导航
     
     参数:
@@ -138,12 +138,11 @@ def create_sidebar_navigation(active_page="热词管理"):
     # 开始导航容器
     st.sidebar.markdown('<div class="navigation-container">', unsafe_allow_html=True)
     
-    # 定义导航选项和对应页面
-    nav_options = ["热词管理", "分析维度管理", "视频分析"]
+    # 定义导航选项和对应页面 - 移除分析维度管理和视频分析，添加视频匹配
+    nav_options = ["视频匹配", "热词管理"]
     nav_pages = {
-        "热词管理": "pages/hotwords.py",
-        "分析维度管理": "pages/dimensions.py",
-        "视频分析": "pages/video_analysis.py"
+        "视频匹配": "pages/video_search.py",
+        "热词管理": "pages/hotwords.py"
     }
     
     # 使用混合方式实现导航 - 活动页面使用HTML，其他使用Streamlit按钮

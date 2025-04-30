@@ -48,7 +48,7 @@ else:
 
 def main():
     """
-    简化的主应用入口函数，通过自动跳转到视频分析页面
+    简化的主应用入口函数，通过自动跳转到视频内容智能搜索页面
     """
     try:
         logger.info("启动应用")
@@ -85,24 +85,24 @@ def main():
             if 'dimensions' not in st.session_state:
                 st.session_state.dimensions = {'title': '品牌认知', 'level1': [], 'level2': {}}
         
-        # 自动跳转到视频分析页面
+        # 自动跳转到视频内容智能搜索页面
         st.markdown("""
-        <meta http-equiv="refresh" content="0;url=/video_analysis" />
+        <meta http-equiv="refresh" content="0;url=/video_search" />
         <script>
-            window.location.href = "/video_analysis"
+            window.location.href = "/video_search"
         </script>
         """, unsafe_allow_html=True)
 
         # 显示备用链接，以防自动跳转失败
-        st.info("正在跳转到视频分析页面，如果没有自动跳转，请点击下方按钮")
+        st.info("正在跳转到视频内容智能搜索页面，如果没有自动跳转，请点击下方按钮")
         
-        if st.button("前往视频分析页面", type="primary"):
-            st.switch_page("pages/video_analysis.py")
+        if st.button("前往视频内容智能搜索页面", type="primary"):
+            st.switch_page("pages/video_search.py")
     
     except Exception as e:
         logger.error(f"加载页面出错: {str(e)}")
         st.error(f"启动应用时出错: {str(e)}")
-        st.info("请尝试刷新页面，或点击[这里](/video_analysis)进入视频分析页面")
+        st.info("请尝试刷新页面，或点击[这里](/video_search)进入视频内容智能搜索页面")
 
 if __name__ == "__main__":
     main()

@@ -126,8 +126,8 @@ hot_words_service = HotWordsService()
 
 def show():
     """渲染热词管理页面"""
-    # 添加导航栏, 并标记当前页面
-    create_sidebar_navigation("热词管理")
+    # 创建侧边栏，注意active_page修改为"热词管理"
+    create_sidebar_navigation(active_page="热词管理")
     
     # 页面标题
     st.title("💬 热词管理")

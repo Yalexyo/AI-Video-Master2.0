@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 *.so
 .Python
-.env
 .venv/
 env/
 venv/
@@ -63,8 +62,6 @@ htmlcov/
 *.ipynb
 
 # Distribution / packaging
-.env
-.env.test
 
 # 分析结果和临时文件
 data/processed/analysis/results/

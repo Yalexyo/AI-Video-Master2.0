@@ -66,7 +66,7 @@ DEFAULT_VIDEO_SEGMENT_DURATION = 5  # 默认视频分段时长（秒）
 ASR_OUTPUT_FORMAT = "vtt"
 
 # 特性开关
-ENABLE_OSS = False  # 是否启用阿里云OSS
+ENABLE_OSS = os.environ.get('ENABLE_OSS', 'True').lower() in ('true', '1', 't')
 ENABLE_DASHSCOPE = True  # 是否启用DashScope
 ENABLE_LOCAL_CHUNK = True  # 是否开启本地分段处理
 ENABLE_AUTO_SEGMENT = True  # 是否自动分段视频
@@ -162,7 +162,6 @@ OSS_PUBLIC_URL_TEMPLATE = os.environ.get(
     'OSS_PUBLIC_URL_TEMPLATE',
     'https://{bucket}.{endpoint}/{key}'
 )
-ENABLE_OSS = os.environ.get('ENABLE_OSS', 'False').lower() in ('true', '1', 't')
 
 # API密钥配置
 API_KEY = os.environ.get('API_KEY', 'default_key_for_development')
