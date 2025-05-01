@@ -75,6 +75,8 @@ docs/*Secret*.csv
 **/credentials.json
 **/*secret*.json
 **/*token*.json
+.env
+src/config/oss_config.ini
 
 # 忽略大型视频文件
 data/test_samples/input/video/*.mp4
@@ -82,6 +84,18 @@ data/test_samples/input/video/*.mov
 data/test_samples/input/video/*.MOV
 data/input/*.mp4
 data/models/
+
+# 忽略特定大文件
+data/models/sentence_transformers/**
+data/models/**/*.bin
+data/models/**/*.dylib
+data/models/**/*.so
+data/models/**/*blo*
+
+# 忽略音频文件
+data/cache/audio/
+data/temp/
+data/cache/
 
 # 忽略输出文件
 data/output/subtitles/
