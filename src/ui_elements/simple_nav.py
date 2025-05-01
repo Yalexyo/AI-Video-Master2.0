@@ -138,10 +138,11 @@ def create_sidebar_navigation(active_page="热词管理"):
     # 开始导航容器
     st.sidebar.markdown('<div class="navigation-container">', unsafe_allow_html=True)
     
-    # 定义导航选项和对应页面 - 移除分析维度管理和视频分析，添加视频匹配
-    nav_options = ["视频匹配", "热词管理"]
+    # 定义导航选项和对应页面 - 添加魔法视频选项
+    nav_options = ["视频匹配", "🪄魔法视频", "热词管理"]
     nav_pages = {
         "视频匹配": "pages/video_search.py",
+        "🪄魔法视频": "pages/magic_video.py",
         "热词管理": "pages/hotwords.py"
     }
     
