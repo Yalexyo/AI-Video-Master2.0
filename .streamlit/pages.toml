@@ -1,0 +1,38 @@
+[visibility]
+# 隐藏所有页面，只通过主应用的导航显示内容
+hideSidebarNavLinks = true
+
+# 定义允许的页面，禁用其他页面访问
+[[pages]]
+name = "Dimensions"
+route = "/dimensions"
+visible = true
+
+[[pages]]
+name = "Hotwords"
+route = "/hotwords"  
+visible = true
+
+[[pages]]
+name = "Video Analysis"
+route = "/video_analysis"
+visible = true
+
+# 明确禁用home和app页面
+[[pages]] 
+name = "Home"
+route = "/"
+visible = false
+allowInBrowserHistory = false
+
+[[pages]] 
+name = "App"
+route = "/app"
+visible = false
+allowInBrowserHistory = false
+
+[[pages]] 
+name = "About"
+route = "/about"
+visible = false
+allowInBrowserHistory = false 

@@ -1,0 +1,104 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 分支管理规则
+type: codebase-conventions
+
+> 此规则定义了项目中Git分支的管理规范和操作指南。
+
+## 分支命名规范
+
+项目使用以下命名约定创建分支：
+
+1. **Bug修复分支**: `debug/{功能名}`
+   - 用于修复问题和Bug
+
+2. **UI优化分支**: `ui/{组件名}`
+   - 用于优化UI界面和交互
+
+3. **新功能分支**: `new-features/{功能名}` 或 `feature/{功能名}`
+   - 用于开发新功能
+
+## 当前分支结构
+
+项目目前维护以下主要分支：
+
+- **main**: 主分支，包含稳定版本代码
+- **feature/video-processing**: 视频处理功能开发分支
+- **debug/function-fix**: 功能修复分支
+- **ui/hotwords-optimization**: 热词UI优化分支
+
+## Git操作指南
+
+### 1. 克隆仓库
+
+```bash
+# 克隆整个仓库到本地
+git clone <仓库URL>
+```
+
+### 2. 分支操作
+
+```bash
+# 查看所有分支(本地和远程)
+git branch -a
+
+# 创建新分支
+git checkout -b <分支类型>/<分支名>
+# 例如：创建Bug修复分支
+git checkout -b debug/search-fix
+
+# 切换到已有分支
+git checkout <分支名>
+# 例如：切换到main分支
+git checkout main
+```
+
+### 3. 拉取远程分支内容
+
+```bash
+# 拉取所有远程分支信息
+git fetch origin
+
+# 拉取特定分支并合并到当前分支
+git pull origin <分支名>
+# 例如：拉取main分支更新
+git pull origin main
+```
+
+### 4. 提交和推送更改
+
+```bash
+# 添加更改到暂存区
+git add .
+
+# 提交更改
+git commit -m "描述你的更改"
+
+# 推送到远程分支
+git push origin <分支名>
+# 例如：推送到当前分支
+git push origin HEAD
+```
+
+### 5. 合并分支
+
+```bash
+# 切换到目标分支
+git checkout main
+
+# 合并其他分支到当前分支
+git merge <源分支名>
+# 例如：合并开发分支到main
+git merge feature/video-processing
+```
+
+## 注意事项
+
+- 所有分支都应该从`main`分支创建
+- 分支名称应使用小写字母和连字符(-)，避免使用下划线或空格
+- 完成工作后通过Pull Request合并回主分支
+- 定期从main分支同步更新，以减少合并冲突
+- 合并前先确保本地测试通过

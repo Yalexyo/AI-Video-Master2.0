@@ -1,0 +1,38 @@
+import streamlit as st
+import logging
+import os
+from datetime import datetime
+
+# 设置日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join('logs', f'app_{datetime.now().strftime("%Y%m%d")}.log'), 'a', 'utf-8')
+    ]
+)
+
+# 主页面
+logger = logging.getLogger(__name__)
+
+def main():
+    """
+    主应用入口函数
+    """
+    # 确保日志目录存在
+    os.makedirs('logs', exist_ok=True)
+    
+    logger.info("启动应用")
+    
+    # 调用 pages/home.py 中的 show 函数显示首页
+    try:
+        # 注意这里使用的是相对导入，基于项目结构
+        from pages.home import show
+        show()
+    except Exception as e:
+        st.error(f"加载首页出错: {str(e)}")
+        logger.error(f"加载首页出错: {str(e)}", exc_info=True)
+
+if __name__ == "__main__":
+    main()
