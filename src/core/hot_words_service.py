@@ -1,14 +1,24 @@
 import os
 import json
 import logging
+import pandas as pd
+from typing import Dict, List, Optional, Tuple, Any, Set, Union
 from datetime import datetime
+import time
 from src.core.hot_words_api import get_api
+from src.config.settings import HOTWORDS_DIR
 
 # 配置日志
 logger = logging.getLogger(__name__)
 
 # 热词文件路径
 HOTWORDS_FILE = os.path.join('data', 'hotwords', 'hotwords.json')
+
+# 默认热词ID
+DEFAULT_VOCABULARY_ID = "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+
+# 当前热词配置文件路径
+CURRENT_HOTWORD_CONFIG = os.path.join(HOTWORDS_DIR, "current_hotword.json")
 
 class HotWordsService:
     """
@@ -22,6 +32,15 @@ class HotWordsService:
         
         # 确保热词目录存在
         os.makedirs(os.path.dirname(HOTWORDS_FILE), exist_ok=True)
+        
+        # 缓存
+        self.vocabularies_cache = None
+        self.vocabularies_cache_time = 0
+        self.cache_valid_duration = 60  # 缓存有效期(秒)
+        
+        # 初始化当前热词ID配置
+        if not os.path.exists(CURRENT_HOTWORD_CONFIG):
+            self._initialize_hotword_config()
     
     def load_hotwords(self):
         """
@@ -301,6 +320,11 @@ class HotWordsService:
         返回:
             (success, message): 是否成功及相关消息
         """
+        # 防止删除默认热词ID
+        if vocabulary_id == DEFAULT_VOCABULARY_ID:
+            logger.warning(f"尝试删除默认热词表 {vocabulary_id}，操作被拒绝")
+            return False, f"默认热词表 {vocabulary_id} 不允许删除"
+            
         # 检查API密钥
         if not self.api.check_api_key():
             return False, "API密钥验证失败，请检查.env文件中的DASHSCOPE_API_KEY设置"
@@ -322,6 +346,13 @@ class HotWordsService:
                     del hotwords_data['vocabulary_ids'][category_to_remove]
                     self.save_hotwords(hotwords_data)
                     logger.info(f"从本地记录中移除了热词表ID {vocabulary_id}，关联的分类为 {category_to_remove}")
+                
+                # 检查是否删除的是当前正在使用的热词ID
+                current_hotword_id = self.get_current_hotword_id()
+                if current_hotword_id == vocabulary_id:
+                    # 重置为默认热词ID
+                    self.set_current_hotword_id(DEFAULT_VOCABULARY_ID)
+                    logger.info(f"检测到删除的是当前使用的热词ID，已重置为默认值: {DEFAULT_VOCABULARY_ID}")
                 
                 return True, f"成功删除云端热词表 {vocabulary_id}"
             else:
@@ -647,6 +678,72 @@ class HotWordsService:
                 result[category] = vocabulary_id
         
         return result
+
+    # 新增: 获取当前使用的热词ID
+    def get_current_hotword_id(self) -> str:
+        """
+        获取当前正在使用的热词表ID
+        如果配置文件不存在或无法读取，则返回默认热词ID
+        """
+        try:
+            if not os.path.exists(CURRENT_HOTWORD_CONFIG):
+                self._initialize_hotword_config()
+                
+            with open(CURRENT_HOTWORD_CONFIG, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return config.get('current_vocabulary_id', DEFAULT_VOCABULARY_ID)
+        except Exception as e:
+            logger.error(f"获取当前热词ID失败: {str(e)}")
+            return DEFAULT_VOCABULARY_ID
+    
+    # 新增: 设置当前使用的热词ID
+    def set_current_hotword_id(self, vocabulary_id: str) -> bool:
+        """
+        设置当前使用的热词表ID
+        
+        参数:
+            vocabulary_id: 要设置为当前使用的热词表ID
+            
+        返回:
+            bool: 是否设置成功
+        """
+        try:
+            if not os.path.exists(CURRENT_HOTWORD_CONFIG):
+                self._initialize_hotword_config()
+                
+            # 读取现有配置
+            with open(CURRENT_HOTWORD_CONFIG, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # 更新配置
+            config['current_vocabulary_id'] = vocabulary_id
+            config['last_updated'] = datetime.now().isoformat()
+            
+            # 保存配置
+            with open(CURRENT_HOTWORD_CONFIG, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+                
+            logger.info(f"已设置当前热词ID为: {vocabulary_id}")
+            return True
+        except Exception as e:
+            logger.error(f"设置当前热词ID失败: {str(e)}")
+            return False
+    
+    # 新增: 初始化热词配置文件
+    def _initialize_hotword_config(self) -> None:
+        """初始化热词配置文件，设置默认热词ID"""
+        try:
+            config = {
+                'current_vocabulary_id': DEFAULT_VOCABULARY_ID,
+                'last_updated': datetime.now().isoformat()
+            }
+            
+            with open(CURRENT_HOTWORD_CONFIG, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+                
+            logger.info(f"已初始化热词配置，默认热词ID: {DEFAULT_VOCABULARY_ID}")
+        except Exception as e:
+            logger.error(f"初始化热词配置失败: {str(e)}")
 
 # 单例模式
 _service_instance = None

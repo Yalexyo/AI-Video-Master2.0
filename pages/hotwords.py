@@ -129,8 +129,27 @@ def show():
     # 创建侧边栏，注意active_page修改为"热词管理"
     create_sidebar_navigation(active_page="热词管理")
     
+    # 初始化session_state变量
+    if "new_vocab_id" not in st.session_state:
+        st.session_state.new_vocab_id = None
+    if "show_apply_button" not in st.session_state:
+        st.session_state.show_apply_button = False
+    
     # 页面标题
     st.title("💬 热词管理")
+    
+    # 显示当前使用的热词ID
+    current_hotword_id = hot_words_service.get_current_hotword_id()
+    is_default = current_hotword_id == "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+    default_tag = ' <span style="background-color: #f8d7da; color: #721c24; padding: 2px 5px; border-radius: 3px; font-size: 12px;">系统默认(不可删除)</span>' if is_default else ''
+    
+    st.markdown(f"""
+    <div style="border: 2px solid #FF4B4B; border-radius: 5px; padding: 10px; margin-bottom: 20px;">
+      <p style="margin: 0; font-size: 16px;">当前程序分析运行所调用的热词ID: <span style="font-weight: bold; font-family: monospace;">{current_hotword_id}</span>{default_tag}</p>
+      <p style="margin-top: 5px; font-size: 12px; color: #666;">注意：ID为 <code>vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b</code> 的热词表是系统默认热词表，不能删除。</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
     # 注入自定义样式
@@ -253,6 +272,9 @@ def show():
         random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         default_name = f"aivideo_{timestamp}_{random_suffix}"
         
+        # 用于存储创建结果的容器
+        create_result_container = st.container()
+        
         with st.form(key="create_hotwords_form"):
             # 显示自动生成的热词表名称
             st.write(f"热词表名称: **{default_name}**")
@@ -288,22 +310,47 @@ def show():
                             )
                             
                             if success:
-                                st.success(f"热词表创建成功！ID: {vocab_id}")
-                                logger.info(f"热词表创建成功: ID={vocab_id}, 名称={default_name}")
-                                
-                                # 创建成功后，刷新云端热词表列表
-                                if "cloud_hot_words" in st.session_state:
-                                    del st.session_state.cloud_hot_words
+                                # 将新创建的热词ID存储在session_state中，而不是在表单中显示结果
+                                st.session_state.new_vocab_id = vocab_id
+                                st.session_state.show_apply_button = True
                             else:
                                 st.error(f"创建失败: {msg}")
-                                logger.error(f"热词表创建失败: {msg}")
                                 
-                                # 显示请求内容以便调试
-                                with st.expander("请求详情"):
-                                    st.json(valid_entries[:10])
                         except Exception as e:
                             st.error(f"创建过程中出现错误: {str(e)}")
                             logger.exception("热词表创建过程中出现异常")
+        
+        # 表单外部显示创建结果和应用按钮
+        with create_result_container:
+            if st.session_state.get("new_vocab_id"):
+                vocab_id = st.session_state.new_vocab_id
+                
+                # 显示成功消息
+                st.success(f"成功创建云端热词表，ID: {vocab_id}")
+                
+                # 添加应用按钮
+                if st.session_state.get("show_apply_button", False):
+                    if st.button("将新创建的热词表设为当前使用", key="apply_new_vocab"):
+                        if hot_words_service.set_current_hotword_id(vocab_id):
+                            st.success(f"已成功设置热词ID: {vocab_id}")
+                            # 清除缓存并刷新页面
+                            if "cloud_vocabularies" in st.session_state:
+                                del st.session_state.cloud_vocabularies
+                            if "vocabulary_details" in st.session_state:
+                                del st.session_state.vocabulary_details
+                            # 清除创建状态
+                            st.session_state.new_vocab_id = None
+                            st.session_state.show_apply_button = False
+                            # 重新加载页面
+                            st.rerun()
+                        else:
+                            st.error("设置热词ID失败")
+                
+                # 显示热词详情
+                with st.expander("热词详情", expanded=False):
+                    st.json(valid_entries[:10])
+                    if len(valid_entries) > 10:
+                        st.info(f"... 仅显示前10个，共有 {len(valid_entries)} 个热词")
     
     # 第二列：云端热词管理
     with right_col:
@@ -473,41 +520,57 @@ def show():
                                 f'<div class="hotwords-list">{"".join(hotwords_html)}</div>', 
                                 unsafe_allow_html=True
                             )
-                    
-                    # 删除按钮 - 避免嵌套列
-                    if vocab_id not in st.session_state.delete_status:
-                        # 初始未删除状态
-                        if st.button("删除此热词表", key=f"delete_{vocab_id}", type="secondary", help="删除此热词表"):
-                            # 标记为准备删除状态
-                            st.session_state.delete_status[vocab_id] = "confirm"
-                            st.rerun()
-                    elif st.session_state.delete_status[vocab_id] == "confirm":
-                        # 显示确认信息
-                        st.warning(f"确定要删除热词表 {vocab_id} 吗？此操作不可恢复!")
                         
-                        # 使用两个并排按钮，但不嵌套列
-                        if st.button("✓ 确认删除", key=f"confirm_{vocab_id}", type="primary"):
-                            with st.spinner("正在删除热词表..."):
-                                success = hot_words_service.delete_cloud_vocabulary(vocab_id)
-                                if success:
-                                    st.success(f"已成功删除热词表 {vocab_id}")
-                                    # 清除缓存并刷新页面
-                                    if "cloud_vocabularies" in st.session_state:
-                                        del st.session_state.cloud_vocabularies
-                                    if "vocabulary_details" in st.session_state:
-                                        del st.session_state.vocabulary_details
-                                    del st.session_state.delete_status[vocab_id]
-                                    st.rerun()
+                            # 添加操作按钮区域
+                            col1, col2 = st.columns([1, 1])
+                            
+                            # 应用该热词列表按钮
+                            with col1:
+                                if vocab_id == current_hotword_id:
+                                    st.success("✓ 当前使用中")
                                 else:
-                                    st.error(f"删除热词表 {vocab_id} 失败")
-                                    # 重置删除状态
-                                    del st.session_state.delete_status[vocab_id]
-                                    st.rerun()
+                                    if st.button("应用该列表", key=f"apply_{vocab_id}"):
+                                        success = hot_words_service.set_current_hotword_id(vocab_id)
+                                        if success:
+                                            st.success(f"已成功设置热词ID: {vocab_id}")
+                                            # 重新加载页面以更新显示
+                                            st.rerun()
+                                        else:
+                                            st.error("设置热词ID失败")
                         
-                        if st.button("✗ 取消", key=f"cancel_{vocab_id}"):
-                            # 重置删除状态
-                            del st.session_state.delete_status[vocab_id]
-                            st.rerun()
+                            # 删除按钮放在第二列
+                            with col2:
+                                # 对默认热词ID进行特殊处理，不允许删除
+                                if vocab_id == "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b":
+                                    st.info("默认热词表，不能删除")
+                                else:
+                                    # 删除按钮 - 避免嵌套列
+                                    if vocab_id not in st.session_state.delete_status:
+                                        # 初始未删除状态
+                                        if st.button("删除此热词表", key=f"delete_{vocab_id}", type="secondary", help="删除此热词表"):
+                                            # 标记为准备删除状态
+                                            st.session_state.delete_status[vocab_id] = "confirm"
+                                            st.rerun()
+                                    elif st.session_state.delete_status[vocab_id] == "confirm":
+                                        # 显示确认信息
+                                        st.warning(f"确定要删除热词表 {vocab_id} 吗？此操作不可恢复!")
+                                        
+                                        # 使用两个并排按钮，但不嵌套列
+                                        if st.button("✓ 确认删除", key=f"confirm_{vocab_id}", type="primary"):
+                                            with st.spinner("正在删除热词表..."):
+                                                success = hot_words_service.delete_cloud_vocabulary(vocab_id)
+                                                if success:
+                                                    st.success(f"已成功删除热词表 {vocab_id}")
+                                                    # 清除缓存并刷新页面
+                                                    if "cloud_vocabularies" in st.session_state:
+                                                        del st.session_state.cloud_vocabularies
+                                                    if "vocabulary_details" in st.session_state:
+                                                        del st.session_state.vocabulary_details
+                                                    del st.session_state.delete_status[vocab_id]
+                                        
+                                        if st.button("✗ 取消", key=f"cancel_{vocab_id}"):
+                                            del st.session_state.delete_status[vocab_id]
+                                            st.rerun()
                     
                     # 关闭卡片标签
                     st.markdown("</div>", unsafe_allow_html=True)

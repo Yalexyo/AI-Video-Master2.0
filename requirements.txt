@@ -15,3 +15,6 @@ tqdm==4.66.1
 dashscope>=1.10.0  # 阿里云DashScope API
 jieba==0.42.1  # 中文分词库
 oss2>=2.17.0  # 阿里云OSS SDK
+opencv-python>=4.5.0  # 图像处理库
+pydub>=0.25.1  # 音频处理库
+httpx>=0.24.0  # HTTP客户端

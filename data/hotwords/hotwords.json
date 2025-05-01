@@ -6,7 +6,8 @@
     ]
   },
   "vocabulary_ids": {
-    "aivideo_250423_scq92h": "vocab-aivideo-0a99bebbb3554fe2af12529c2277406d"
+    "aivideo_250423_scq92h": "vocab-aivideo-0a99bebbb3554fe2af12529c2277406d",
+    "aivideo_250501_vx0fx9": "vocab-aivideo-f688bcde899b40818de88ce627bb004f"
   },
-  "last_updated": "2025-04-23 22:47:06"
+  "last_updated": "2025-05-01 19:43:14"
 }
