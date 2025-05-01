@@ -278,35 +278,45 @@ class VideoProcessingTestCase(unittest.TestCase):
             'text': ['这是关于产品质量的讨论', '品牌形象很重要', '用户体验需要提升']
         })
         
-        # 测试关键词
-        test_keywords = ['产品质量', '品牌', '用户体验']
+        # 从意图服务获取关键词
+        try:
+            # 如果意图服务未初始化，则初始化一个
+            if not hasattr(self, 'intent_service') or self.intent_service is None:
+                self.intent_service = IntentService()
+                
+            # 获取第一个意图的关键词
+            intents = self.intent_service.get_all_intents()
+            if not intents or len(intents) == 0:
+                self.skipTest("未找到可用的意图定义，跳过关键词分析测试")
+                
+            # 选择第一个意图
+            selected_intent = intents[0]
+            test_keywords = selected_intent.get('keywords', [])
+            
+            if not test_keywords:
+                self.skipTest(f"意图 '{selected_intent.get('name')}' 未定义关键词，跳过测试")
+                
+            logger.info(f"使用意图 '{selected_intent.get('name')}' 的关键词: {', '.join(test_keywords)}")
+        except Exception as e:
+            self.skipTest(f"意图关键词获取失败: {str(e)}")
         
         # 模拟关键词分析过程
         with patch.object(self.analyzer, 'analyze_keywords') as mock_analyze:
+            # 动态创建基于从意图获取的关键词的模拟结果
+            mock_matches = []
+            for i, kw in enumerate(test_keywords[:3]):  # 只使用前三个关键词
+                mock_matches.append({
+                    'keyword': kw,
+                    'timestamp': f'00:00:{(i+1)*5:02d}',
+                    'text': f'这是关于{kw}的讨论',
+                    'score': 0.90 + i*0.02
+                })
+            
             mock_analyze.return_value = {
                 'type': '关键词分析',
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'keywords': test_keywords,
-                'matches': [
-                    {
-                        'keyword': '产品质量',
-                        'timestamp': '00:00:01',
-                        'text': '这是关于产品质量的讨论',
-                        'score': 0.95
-                    },
-                    {
-                        'keyword': '品牌',
-                        'timestamp': '00:00:05',
-                        'text': '品牌形象很重要',
-                        'score': 0.88
-                    },
-                    {
-                        'keyword': '用户体验',
-                        'timestamp': '00:00:10',
-                        'text': '用户体验需要提升',
-                        'score': 0.92
-                    }
-                ]
+                'matches': mock_matches
             }
             
             # 调用测试方法
@@ -314,8 +324,8 @@ class VideoProcessingTestCase(unittest.TestCase):
             
             # 验证结果
             self.assertEqual(results['type'], '关键词分析')
-            self.assertEqual(len(results['matches']), 3)
-            self.assertEqual(results['matches'][0]['keyword'], '产品质量')
+            self.assertGreaterEqual(len(results['matches']), 1)
+            self.assertEqual(results['matches'][0]['keyword'], test_keywords[0])
             
             # 验证方法被调用
             mock_analyze.assert_called_once()

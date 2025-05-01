@@ -6,12 +6,12 @@ from src.core.intent_service import IntentService
 
 logger = logging.getLogger(__name__)
 
-def render_intent_selector() -> Optional[Dict[str, Any]]:
+def render_intent_selector() -> Optional[List[Dict[str, Any]]]:
     """
-    渲染意图选择器UI组件
+    渲染意图选择器UI组件，支持多选和全选
     
     返回:
-        用户选择的意图字典或None
+        用户选择的意图字典列表或None
     """
     try:
         # 初始化服务
@@ -24,37 +24,60 @@ def render_intent_selector() -> Optional[Dict[str, Any]]:
         
         # 创建UI
         st.subheader("选择内容意图 (必选)")
-        st.caption("👇 请先从下列选项中选择一个主要意图")
+        st.caption("👇 请从下列选项中选择需要分析的意图")
         
-        # 使用单选按钮展示所有意图选项
-        intent_options = [(intent['id'], f"{intent['name']} - {intent['description']}") 
-                          for intent in intents]
+        # 添加全选复选框
+        select_all = st.checkbox("全选", key="select_all_intents", 
+                               help="选择所有可用意图")
         
-        selected_id = st.radio(
-            "选择一个意图类别",
-            options=[id for id, _ in intent_options],
-            format_func=lambda x: next((name for id, name in intent_options if id == x), x),
-            horizontal=False,
-            key="intent_radio"
+        # 为每个意图创建复选框
+        selected_intent_ids = []
+        intent_objects = {}
+        
+        # 保存所有意图的字典，便于后续查找
+        for intent in intents:
+            intent_objects[intent['id']] = intent
+        
+        # 使用列表推导式创建所有意图ID的列表
+        all_intent_ids = [intent['id'] for intent in intents]
+            
+        # 如果用户选择全选，则默认选中所有意图
+        default_values = all_intent_ids if select_all else []
+        
+        # 使用多选框展示所有意图选项
+        options = st.multiselect(
+            "选择意图(支持多选)",
+            options=all_intent_ids,
+            default=default_values,
+            format_func=lambda x: f"{intent_objects[x]['name']} - {intent_objects[x]['description']}",
+            key="intent_multiselect"
         )
         
-        if selected_id:
+        selected_intent_ids = options
+        
+        # 如果有选择，显示选中数量
+        if selected_intent_ids:
             # 获取选中的意图详情
-            selected_intent = intent_service.get_intent_by_id(selected_id)
+            selected_intents = [intent_service.get_intent_by_id(intent_id) for intent_id in selected_intent_ids]
+            selected_intents = [intent for intent in selected_intents if intent is not None]
             
-            if selected_intent:
+            if selected_intents:
                 # 显示选中的意图
-                st.success(f"✅ 已选择: **{selected_intent['name']}**")
+                st.success(f"✅ 已选择 {len(selected_intents)} 个意图")
                 
-                # 显示相关关键词
-                if 'keywords' in selected_intent and selected_intent['keywords']:
-                    keywords_text = ", ".join(selected_intent['keywords'])
+                # 展示选中的意图名称
+                intent_names = [intent['name'] for intent in selected_intents]
+                st.caption(f"选中的意图: {', '.join(intent_names)}")
+                
+                # 如果只选择了一个意图，显示相关关键词
+                if len(selected_intents) == 1 and 'keywords' in selected_intents[0] and selected_intents[0]['keywords']:
+                    keywords_text = ", ".join(selected_intents[0]['keywords'])
                     st.caption(f"相关关键词: {keywords_text}")
                 
-                return selected_intent
-        
-        st.info("⚠️ 请先选择一个意图类别才能继续")
-        return None
+                return selected_intents
+        else:
+            st.info("⚠️ 请至少选择一个意图才能继续")
+            return None
         
     except Exception as e:
         logger.error(f"渲染意图选择器时出错: {str(e)}")

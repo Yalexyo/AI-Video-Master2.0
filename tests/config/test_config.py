@@ -1,19 +1,27 @@
 # 测试配置文件
+# 包含测试过程中使用的各种配置参数
 
-# 测试用的热词表ID
-TEST_VOCABULARY_IDS = {
-    "母婴用品": "vocab_maternal_baby",
-    "美妆护肤": "vocab_beauty_care",
-    "数码产品": "vocab_digital",
-    "通用": "vocab_general"
-}
-
-# 测试视频与热词表的映射关系
-VIDEO_VOCABULARY_MAPPING = {
-    "17.mp4": "vocab_maternal_baby",  # 母婴用品相关视频
-    "beauty_review.mp4": "vocab_beauty_care",  # 美妆测评视频
-    "tech_unboxing.mp4": "vocab_digital"  # 数码开箱视频
-}
+# 热词表ID列表
+TEST_VOCABULARY_IDS = [
+    "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b" # 通用热词表
+]
 
 # 默认热词表ID
-DEFAULT_VOCABULARY_ID = "vocab_general" 
+DEFAULT_VOCABULARY_ID = "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+
+# 视频与热词表的映射关系
+VIDEO_VOCABULARY_MAPPING = {
+    # 默认所有视频都使用通用热词表
+    "17.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "18.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "19.m4v": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "20.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "21.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "22.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "23.mov": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "24.mov": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "25.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "26.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "27.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b",
+    "28.mp4": "vocab-aivideo-4d73bdb1b5ef496d94f5104a957c012b"
+} 

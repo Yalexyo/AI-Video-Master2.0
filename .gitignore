@@ -75,3 +75,14 @@ docs/*Secret*.csv
 **/credentials.json
 **/*secret*.json
 **/*token*.json
+
+# 忽略大型视频文件
+data/test_samples/input/video/*.mp4
+data/test_samples/input/video/*.mov
+data/test_samples/input/video/*.MOV
+data/input/*.mp4
+data/models/
+
+# 忽略输出文件
+data/output/subtitles/
+data/output/segments/

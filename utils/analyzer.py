@@ -10,8 +10,6 @@ import json
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 
 from sentence_transformers import SentenceTransformer, util
-from sklearn.feature_extraction.text import TfidfVectorizer
-import jieba
 import re
 from multiprocessing import Pool, cpu_count
 from src.config.settings import VIDEO_ANALYSIS_DIR
@@ -344,9 +342,6 @@ class VideoAnalyzer:
                 logger.info(f"编码 {len(keywords)} 个关键词")
                 keyword_embeddings = model.encode(preprocessed_keywords, show_progress_bar=False)
                 
-                # 提取额外关键词
-                extracted_keywords, extracted_embeddings = self._extract_keywords(texts, model)
-                logger.info(f"自动提取了 {len(extracted_keywords)} 个额外关键词")
             except Exception as e:
                 logger.error(f"编码文本时出错: {str(e)}")
                 results["error"] = f"编码文本时出错: {str(e)}"
@@ -377,20 +372,6 @@ class VideoAnalyzer:
                             "source": "预定义关键词"
                         })
                 
-                # 计算与自动提取关键词的相似度
-                for ext_idx, ext_keyword in enumerate(extracted_keywords):
-                    # 计算相似度
-                    similarity = util.cos_sim(text_embedding, extracted_embeddings[ext_idx])[0][0].item()
-                    
-                    # 如果相似度高于阈值，添加到匹配结果
-                    if similarity >= threshold and not any(m.get('keyword') == ext_keyword for m in results["matches"]):
-                        results["matches"].append({
-                            "keyword": ext_keyword,
-                            "timestamp": row.get('timestamp', '00:00:00'),
-                            "text": text,
-                            "score": float(similarity),
-                            "source": "自动提取关键词"
-                        })
             
             logger.info(f"关键词分析完成，匹配 {len(results['matches'])} 条记录")
             results["analysis_method"] = "语义相似度匹配"
@@ -406,50 +387,6 @@ class VideoAnalyzer:
                 "analysis_method": "分析失败"
             }
             return results
-    
-    def _extract_keywords(self, texts: List[str], model) -> Tuple[List[str], np.ndarray]:
-        """
-        从文本中提取关键词
-        
-        参数:
-            texts: 文本列表
-            model: 语义模型
-            
-        返回:
-            (keywords, embeddings): 提取的关键词列表和对应的嵌入向量
-        """
-        try:
-            # 合并所有文本
-            combined_text = " ".join(texts)
-            
-            # 使用jieba分词
-            seg_list = jieba.cut(combined_text)
-            seg_text = " ".join(seg_list)
-            
-            # 使用TF-IDF提取关键词
-            vectorizer = TfidfVectorizer(max_features=20, stop_words='english')
-            try:
-                vectorizer.fit_transform([seg_text])
-                feature_names = vectorizer.get_feature_names_out()
-            except:
-                # 备用方案：简单分词后选择长度大于1的词
-                words = [word for word in seg_list if len(word) > 1]
-                # 按词频排序，取前20个
-                word_counts = {}
-                for word in words:
-                    word_counts[word] = word_counts.get(word, 0) + 1
-                feature_names = sorted(word_counts.keys(), key=lambda x: word_counts[x], reverse=True)[:20]
-            
-            # 过滤掉数字和标点符号
-            keywords = [word for word in feature_names if not re.match(r'^\d+$', word) and len(word) > 1]
-            
-            # 编码关键词
-            embeddings = model.encode(keywords, show_progress_bar=False)
-            
-            return keywords, embeddings
-        except Exception as e:
-            logger.error(f"提取关键词时出错: {str(e)}")
-            return [], np.array([])
     
     def _preprocess_text(self, text: str) -> str:
         """
