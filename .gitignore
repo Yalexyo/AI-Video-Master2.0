@@ -98,3 +98,7 @@ data/cache/
 # 忽略输出文件
 data/output/subtitles/
 data/output/segments/
+
+# 本地敏感配置
+.env
+src/config/oss_config.ini
