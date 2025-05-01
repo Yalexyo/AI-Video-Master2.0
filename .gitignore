@@ -100,3 +100,19 @@ data/cache/
 # 忽略输出文件
 data/output/subtitles/
 data/output/segments/
+
+# 更多排除规则
+.venv/
+.venv/**/*
+.git/objects/pack/*.pack
+**/sentence_transformers/models--*/**
+**/pytorch_model.bin
+**/*.dylib
+**/*.so
+data/uploads/**
+data/test_samples/**/*.mp4
+data/test_samples/**/*.mov
+data/test_samples/**/*.MOV
+data/test_samples/**/*.avi
+data/test_samples/**/*.mkv
+data/test_samples/**/*.webm
