@@ -6,11 +6,22 @@ import json
 import time
 import random
 import string
+from dotenv import load_dotenv
 
 from src.core.hot_words_service import HotWordsService
 from src.core.hot_words_api import create_env_file
 from src.ui_elements.simple_nav import create_sidebar_navigation
 from src.config.settings import HOTWORDS_DIR
+
+# 重新加载环境变量，确保最新值可用
+load_dotenv(override=True)
+if os.environ.get('DASHSCOPE_API_KEY'):
+    # 记录API密钥前后几位用于调试
+    api_key = os.environ.get('DASHSCOPE_API_KEY')
+    masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
+    logging.getLogger(__name__).info(f"热词管理页面加载，API密钥: {masked_key}")
+else:
+    logging.getLogger(__name__).warning("热词管理页面加载，但未找到API密钥环境变量")
 
 # 页面配置必须是第一个st命令
 st.set_page_config(

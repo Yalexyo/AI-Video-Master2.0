@@ -162,3 +162,149 @@
 ## 关键词标签
 
 #API优化 #文件管理 #错误处理 #UI优化 #视频处理 #语音识别 #热词表 #临时文件 #缓存策略 #系统健壮性
+
+# 调试记录
+
+## 待验证清单
+
+## [阿里云DashScope语音识别API] 字幕转写403错误修复 (2025-05-02解决)
+
+### 1. 问题背景
+- 最初发现时间和场景：2025-05-02，在进行视频匹配功能模块测试时
+- 问题表现：系统无法成功调用阿里云DashScope的Paraformer语音识别API，导致视频处理流程失败
+- 相关错误日志：DashScope API返回403错误，错误信息为"current user api does not support synchronous calls"
+
+### 2. 尝试方案历史
+
+- **方案1: 修改format_type参数** ❌
+  - 假设：API需要使用非流式调用而不是流式调用
+  - 改动：将`format_type`从"streaming"改为"non-streaming"
+  - 结果：❌ 仍然返回403错误，未解决问题
+
+- **方案2: 实现异步任务轮询** ❌
+  - 假设：API只支持异步调用，需要轮询获取结果
+  - 改动：添加`get_transcription_result`方法以支持异步任务轮询
+  - 结果：❌ 仍然返回403错误，未解决问题
+
+- **方案3: 使用官方SDK代替直接HTTP调用** ✅
+  - 假设：可能是HTTP API调用权限问题，使用官方SDK可能有不同的权限机制
+  - 改动：实现了`DashScopeSDKWrapper`类，使用DashScope Python SDK的异步调用方式
+  - 结果：✅ SDK调用成功，但面临两个新问题：
+    1. 返回数据结构与预期不同，没有直接提供字幕数据
+    2. 需要从`transcription_url`下载并解析字幕数据
+
+- **方案4: 处理transcription_url返回数据** ✅
+  - 假设：需要下载并解析`transcription_url`指向的JSON数据
+  - 改动：添加`_parse_transcription_url`方法下载并解析该URL指向的JSON数据
+  - 结果：✅ 成功从`transcripts`字段提取字幕数据
+
+### 3. 最终解决方案
+
+最终解决方案是通过以下步骤实现的：
+
+1. 创建`dashscope_sdk_wrapper.py`封装DashScope SDK调用:
+   ```python
+   def transcribe_audio(self, file_url, model="paraformer-v2", vocabulary_id=None):
+       # 使用SDK的异步调用方式
+       response = Transcription.async_call(
+           model=model,
+           file_urls=[file_url],  # 注意这里是file_urls不是file_url
+           vocabulary_id=vocabulary_id,
+           sample_rate=16000,
+           punctuation=True
+       )
+       
+       # 获取任务ID并等待任务完成
+       task_id = response.output.get('task_id')
+       result = Transcription.wait(task_id)
+       
+       # 从结果URL获取字幕数据
+       if result.status_code == 200:
+           if 'results' in result.output:
+               first_result = result.output['results'][0]
+               if 'transcription_url' in first_result:
+                   transcription_url = first_result['transcription_url']
+                   # 下载并解析字幕数据
+                   return self._parse_transcription_url(transcription_url)
+   ```
+
+2. 解析转写结果URL中的字幕数据:
+   ```python
+   def _parse_transcription_url(self, url):
+       # 下载转写结果
+       response = requests.get(url, timeout=30)
+       if response.status_code == 200:
+           data = response.json()
+           sentences = []
+           
+           # 从transcripts字段提取字幕
+           if 'transcripts' in data:
+               transcripts = data['transcripts']
+               for transcript in transcripts:
+                   if 'text' in transcript:
+                       sentences.append({
+                           'text': transcript.get('text', ''),
+                           'begin_time': transcript.get('begin_time', 0),
+                           'end_time': transcript.get('end_time', 0)
+                       })
+           
+           return sentences
+   ```
+
+3. 在`processor.py`中更新字幕提取逻辑，优先使用SDK调用:
+   ```python
+   def _extract_subtitles_from_video(self, video_file, vocabulary_id=None):
+       # 检查缓存
+       cache_key = self._get_cache_key(video_file)
+       if cache_key in self.audio_cache:
+           # 验证缓存的是字幕数据而不是文件路径
+           cached_data = self.audio_cache[cache_key]
+           if isinstance(cached_data, list):
+               return cached_data
+       
+       # 提取音频并上传到OSS
+       audio_file = self._extract_audio_from_video(video_file)
+       audio_url = self._upload_to_accessible_url(audio_file)
+       
+       # 先尝试SDK调用
+       try:
+           sdk_wrapper = DashScopeSDKWrapper()
+           result = sdk_wrapper.transcribe_audio(
+               file_url=audio_url,
+               vocabulary_id=vocabulary_id
+           )
+           
+           if result.get("status") == "success":
+               subtitles = result.get("sentences", [])
+               self.audio_cache[cache_key] = subtitles
+               self._save_audio_cache()
+               return subtitles
+       except Exception as e:
+           logger.warning(f"SDK转写失败，尝试HTTP API: {str(e)}")
+           
+       # 退回到HTTP API调用
+       # ...
+   ```
+
+### 4. 经验教训与预防措施
+
+1. **API权限机制变更:**
+   - 阿里云DashScope的Paraformer API不再支持同步调用，只能使用异步模式
+   - 如果遇到403权限错误，应该查看API文档中是否有权限或调用方式的变化
+
+2. **使用官方SDK的优势:**
+   - 官方SDK可能支持比直接HTTP调用更多的功能和更好的权限管理
+   - 异步API通常需要任务ID和轮询机制，官方SDK通常对此有良好的封装
+
+3. **针对返回结果的多种情况处理:**
+   - 不同的API可能返回不同格式的结果
+   - 应该对不同字段名称（如sentences、transcripts、transcript等）做兼容处理
+   - 文本结果可能需要进一步处理，如分段、时间戳补充等
+
+4. **预防措施:**
+   - 增加了更全面的错误处理和日志记录
+   - 实现了缓存数据类型的验证，确保缓存的是字幕数据而不是文件路径
+   - 提供了SDK和HTTP API两种调用方式，以提高系统健壮性
+
+### 5. 关键词标签
+#阿里云 #DashScope #API权限 #语音识别 #异步API #Paraformer

@@ -1,0 +1,23 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# AI视频大师项目规则文件
+
+本目录包含项目开发和维护的规则文件，所有开发者应遵循这些规则。
+
+## 规则清单
+
+- [分支管理规则](mdc:branch-management.mdc)：定义Git分支的管理规范和操作指南
+- [Debug迭代策略](mdc:debug-iteration-strategy.mdc)：处理重复且难以定位的Bug的方法
+- [Debug最小化修改原则](mdc:debug-minimal-change.mdc)：调试和功能开发指南
+- [项目经理规范](mdc:project-manager-master.mdc)：产品经理、架构师和工程师协作规范
+- [项目结构规范](mdc:project-structure.mdc)：定义项目目录结构和文件组织
+- [测试文件组织规则](mdc:test_files_organization.mdc)：测试文件的目录结构和命名规范
+
+## 规则使用方法
+
+1. 所有新开发者应首先阅读这些规则
+2. 开发过程中有疑问时，应查阅相关规则
+3. 如需修改规则，请提出Pull Request并说明理由

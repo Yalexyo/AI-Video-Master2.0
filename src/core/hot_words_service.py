@@ -41,6 +41,38 @@ class HotWordsService:
         # 初始化当前热词ID配置
         if not os.path.exists(CURRENT_HOTWORD_CONFIG):
             self._initialize_hotword_config()
+        
+        # 从配置文件加载当前热词ID
+        self.current_hotword_id = self._load_current_hotword_id()
+        logger.info(f"已加载当前热词ID: {self.current_hotword_id}")
+    
+    def _load_current_hotword_id(self) -> str:
+        """
+        从配置文件加载当前热词ID
+        
+        返回:
+            当前热词ID
+        """
+        try:
+            with open(CURRENT_HOTWORD_CONFIG, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return config.get('current_vocabulary_id', DEFAULT_VOCABULARY_ID)
+        except Exception as e:
+            logger.error(f"加载热词配置失败: {str(e)}, 使用默认热词ID: {DEFAULT_VOCABULARY_ID}")
+            return DEFAULT_VOCABULARY_ID
+            
+    def refresh_hotword_config(self) -> None:
+        """
+        刷新热词配置，重新从配置文件加载当前热词ID
+        用于热词配置被外部修改后更新内存中的值
+        """
+        previous_id = self.current_hotword_id
+        self.current_hotword_id = self._load_current_hotword_id()
+        
+        if previous_id != self.current_hotword_id:
+            logger.info(f"热词配置已更新: {previous_id} -> {self.current_hotword_id}")
+        else:
+            logger.debug("热词配置未变更")
     
     def load_hotwords(self):
         """
@@ -682,52 +714,38 @@ class HotWordsService:
     # 新增: 获取当前使用的热词ID
     def get_current_hotword_id(self) -> str:
         """
-        获取当前正在使用的热词表ID
-        如果配置文件不存在或无法读取，则返回默认热词ID
+        获取当前正在使用的热词ID
+        
+        返回:
+            当前热词ID字符串
         """
-        try:
-            if not os.path.exists(CURRENT_HOTWORD_CONFIG):
-                self._initialize_hotword_config()
-                
-            with open(CURRENT_HOTWORD_CONFIG, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                return config.get('current_vocabulary_id', DEFAULT_VOCABULARY_ID)
-        except Exception as e:
-            logger.error(f"获取当前热词ID失败: {str(e)}")
-            return DEFAULT_VOCABULARY_ID
+        return self.current_hotword_id
     
     # 新增: 设置当前使用的热词ID
-    def set_current_hotword_id(self, vocabulary_id: str) -> bool:
+    def set_current_hotword_id(self, hotword_id: str) -> None:
         """
-        设置当前使用的热词表ID
+        设置当前热词ID，更新配置文件并内存中的值
         
         参数:
-            vocabulary_id: 要设置为当前使用的热词表ID
-            
-        返回:
-            bool: 是否设置成功
+            hotword_id: 热词ID
         """
         try:
-            if not os.path.exists(CURRENT_HOTWORD_CONFIG):
-                self._initialize_hotword_config()
-                
-            # 读取现有配置
-            with open(CURRENT_HOTWORD_CONFIG, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+            # 更新配置文件
+            config = {
+                'current_vocabulary_id': hotword_id,
+                'last_updated': datetime.now().isoformat()
+            }
             
-            # 更新配置
-            config['current_vocabulary_id'] = vocabulary_id
-            config['last_updated'] = datetime.now().isoformat()
-            
-            # 保存配置
             with open(CURRENT_HOTWORD_CONFIG, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
-                
-            logger.info(f"已设置当前热词ID为: {vocabulary_id}")
-            return True
+            
+            # 更新内存中的值
+            self.current_hotword_id = hotword_id
+            logger.info(f"已设置当前热词ID为: {hotword_id}")
         except Exception as e:
             logger.error(f"设置当前热词ID失败: {str(e)}")
-            return False
+            # 即使写入配置失败，也更新内存中的值，确保当前会话可用
+            self.current_hotword_id = hotword_id
     
     # 新增: 初始化热词配置文件
     def _initialize_hotword_config(self) -> None:

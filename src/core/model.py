@@ -1,3 +1,11 @@
+import os
+# 设置所有离线模式环境变量
+os.environ['TRANSFORMERS_OFFLINE'] = '1'
+os.environ['HF_HUB_OFFLINE'] = '1'
+os.environ['HF_DATASETS_OFFLINE'] = '1'
+os.environ['DISABLE_TELEMETRY'] = '1'
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
+
 import torch
 import logging
 from typing import List, Dict, Any, Optional

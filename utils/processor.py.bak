@@ -1,0 +1,967 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+视频处理器模块：提供视频处理、音频处理、字幕提取等功能。
+"""
+
+import os
+import re
+import json
+import time
+import logging
+import tempfile
+import subprocess
+from typing import List, Dict, Any, Optional, Tuple
+from datetime import datetime
+
+# 配置日志
+logger = logging.getLogger(__name__)
+
+# 从utils导入DashScope API SDK包装器
+from utils.dashscope_sdk_wrapper import dashscope_sdk
+
+# 导入配置
+try:
+    from src.config.settings import (
+        OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME, 
+        OSS_ENDPOINT, OSS_UPLOAD_DIR, OSS_PUBLIC_URL_TEMPLATE,
+        ENABLE_OSS
+    )
+except ImportError:
+    # 默认配置
+    OSS_ACCESS_KEY_ID = os.environ.get("OSS_ACCESS_KEY_ID", "")
+    OSS_ACCESS_KEY_SECRET = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
+    OSS_BUCKET_NAME = os.environ.get("OSS_BUCKET_NAME", "")
+    OSS_ENDPOINT = os.environ.get("OSS_ENDPOINT", "")
+    OSS_UPLOAD_DIR = "uploads"
+    OSS_PUBLIC_URL_TEMPLATE = "https://{bucket}.{endpoint}/{key}"
+    ENABLE_OSS = True
+
+# 导入OSS模块（如果可用）
+try:
+    import oss2
+    OSS_AVAILABLE = True
+except ImportError:
+    OSS_AVAILABLE = False
+
+class VideoProcessor:
+    """视频处理器，处理视频转换、字幕生成等功能"""
+    
+    def __init__(self):
+        """初始化视频处理器"""
+        # 确保必要的目录存在
+        self._ensure_directories()
+        
+        # 初始化缓存
+        self.audio_cache = {}
+        self._load_audio_cache()
+    
+    def _ensure_directories(self):
+        """确保必要的目录结构存在"""
+        directories = [
+            os.path.join('data', 'temp', 'audio'),
+            os.path.join('data', 'temp', 'videos'),
+            os.path.join('data', 'cache', 'audio'),
+            os.path.join('data', 'processed', 'subtitles')
+        ]
+        
+        for directory in directories:
+            os.makedirs(directory, exist_ok=True)
+    
+    def _load_audio_cache(self):
+        """加载音频处理缓存"""
+        cache_path = os.path.join('data', 'cache', 'audio_cache.json')
+        try:
+            if os.path.exists(cache_path):
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    self.audio_cache = json.load(f)
+        except Exception as e:
+            logger.warning(f"加载音频缓存失败: {str(e)}")
+            self.audio_cache = {}
+    
+    def _save_audio_cache(self):
+        """保存音频处理缓存"""
+        cache_path = os.path.join('data', 'cache', 'audio_cache.json')
+        try:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump(self.audio_cache, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"保存音频缓存失败: {str(e)}")
+            
+    def _get_cache_key(self, video_file: str) -> str:
+        """获取缓存键"""
+        if video_file.startswith(('http://', 'https://')):
+            return video_file
+        else:
+            try:
+                file_size = os.path.getsize(video_file)
+                file_name = os.path.basename(video_file)
+                return f"{file_name}_{file_size}"
+            except:
+                return video_file
+    
+    def extract_audio(self, video_file: str) -> Optional[str]:
+        """
+        从视频文件中提取音频
+        
+        参数:
+            video_file: 视频文件路径
+            
+        返回:
+            音频文件路径，失败时返回None
+        """
+        try:
+            if not os.path.exists(video_file):
+                logger.error(f"视频文件不存在: {video_file}")
+                return None
+                
+            # 生成输出音频文件路径
+            audio_dir = os.path.join('data', 'temp', 'audio')
+            os.makedirs(audio_dir, exist_ok=True)
+            
+            file_name = os.path.basename(video_file)
+            base_name = os.path.splitext(file_name)[0]
+            audio_file = os.path.join(audio_dir, f"{base_name}_{int(time.time())}.wav")
+            
+            # 使用ffmpeg提取音频
+            cmd = [
+                'ffmpeg',
+                '-y',
+                '-i', video_file,
+                '-vn',
+                '-ar', '16000',
+                '-ac', '1',
+                '-c:a', 'pcm_s16le',
+                '-f', 'wav',
+                audio_file
+            ]
+            
+            # 执行命令
+            result = subprocess.run(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # 检查执行结果
+            if result.returncode != 0:
+                logger.error(f"提取音频失败: {result.stderr}")
+                return None
+                
+            # 检查输出文件
+            if not os.path.exists(audio_file) or os.path.getsize(audio_file) == 0:
+                logger.error(f"生成的音频文件不存在或为空: {audio_file}")
+                return None
+                
+            logger.info(f"成功提取音频: {audio_file}")
+            return audio_file
+            
+        except Exception as e:
+            logger.exception(f"提取音频时出错: {str(e)}")
+            return None
+    
+    def _convert_to_standard_audio(self, audio_file: str) -> Optional[str]:
+        """
+        将音频转换为标准格式（16kHz、单声道、PCM WAV）
+        
+        参数:
+            audio_file: 输入音频文件路径
+            
+        返回:
+            转换后的音频文件路径，失败时返回None
+        """
+        try:
+            if not os.path.exists(audio_file):
+                logger.error(f"音频文件不存在: {audio_file}")
+                return None
+                
+            # 生成输出文件路径
+            output_dir = os.path.dirname(audio_file)
+            base_name = os.path.splitext(os.path.basename(audio_file))[0]
+            output_file = os.path.join(output_dir, f"{base_name}_standard.wav")
+            
+            # 使用ffmpeg转换为标准格式
+            cmd = [
+                'ffmpeg',
+                '-y',
+                '-i', audio_file,
+                '-acodec', 'pcm_s16le',
+                '-ar', '16000',
+                '-ac', '1',
+                '-f', 'wav',
+                output_file
+            ]
+            
+            # 执行命令
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # 检查执行结果
+            if result.returncode != 0:
+                logger.error(f"音频格式转换失败: {result.stderr}")
+                return None
+                
+            # 检查输出文件
+            if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+                logger.error(f"生成的标准音频文件不存在或为空: {output_file}")
+                return None
+                
+            logger.info(f"成功转换音频格式: {output_file}")
+            return output_file
+        
+        except Exception as e:
+            logger.exception(f"转换音频格式时出错: {str(e)}")
+            return None
+    
+    def _upload_to_accessible_url(self, file_path: str) -> Optional[str]:
+        """
+        将文件上传到可访问的URL（如阿里云OSS）
+        
+        参数:
+            file_path: 本地文件路径
+            
+        返回:
+            公开访问的URL，失败时返回None
+        """
+        try:
+            # 检查OSS是否可用
+            if not ENABLE_OSS or not OSS_AVAILABLE:
+                logger.error("阿里云OSS未启用或不可用，无法上传文件")
+                return None
+                
+            # 检查配置是否完整
+            if not all([OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET_NAME, OSS_ENDPOINT]):
+                logger.error("阿里云OSS配置不完整")
+                return None
+                
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                logger.error(f"要上传的文件不存在: {file_path}")
+                return None
+                
+            # 初始化OSS客户端
+            auth = oss2.Auth(OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET)
+            bucket = oss2.Bucket(auth, OSS_ENDPOINT, OSS_BUCKET_NAME)
+            
+            # 生成OSS对象路径
+            file_name = os.path.basename(file_path)
+            timestamp = int(time.time())
+            oss_path = f"{OSS_UPLOAD_DIR}/{timestamp}_{file_name}"
+            
+            # 上传文件
+            result = bucket.put_object_from_file(oss_path, file_path)
+            
+            # 检查上传结果
+            if result.status == 200:
+                # 生成公开访问URL
+                url = OSS_PUBLIC_URL_TEMPLATE.format(
+                    bucket=OSS_BUCKET_NAME,
+                    endpoint=OSS_ENDPOINT,
+                    key=oss_path
+                )
+                logger.info(f"文件成功上传到OSS: {url}")
+                return url
+            else:
+                logger.error(f"上传文件到OSS失败，状态码: {result.status}")
+                return None
+                
+        except Exception as e:
+            logger.exception(f"上传文件到OSS时出错: {str(e)}")
+            return None
+            
+    def _cleanup_temp_files(self, temp_file: str) -> None:
+        """
+        清理临时文件
+        
+        参数:
+            temp_file: 临时文件路径
+        """
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+                logger.info(f"已清理临时文件: {temp_file}")
+            except Exception as e:
+                logger.warning(f"清理临时文件失败: {str(e)}")
+    
+    def _format_time(self, seconds: float) -> str:
+        """格式化时间为HH:MM:SS格式"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds = int(seconds % 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        
+    def _format_time_srt(self, seconds: float) -> str:
+        """格式化时间为SRT格式：HH:MM:SS,mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds_int = int(seconds % 60)
+        milliseconds = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{seconds_int:02d},{milliseconds:03d}"
+    
+    def _parse_paraformer_response(self, response) -> List[Dict[str, Any]]:
+        """
+        解析Paraformer API返回的结果
+        
+        参数:
+            response: API响应对象
+            
+        返回:
+            字幕数据列表
+        """
+        subtitles = []
+        sentences = []
+        
+        try:
+            # 检查response是否有output字段
+            if hasattr(response, 'output') and response.output:
+                # 首先检查是否是异步API的响应格式
+                if 'sentences' in response.output:
+                    # 这是异步API的直接响应格式
+                    sentences = response.output['sentences']
+                # 然后检查是否是同步API的响应格式
+                elif 'results' in response.output and response.output['results']:
+                    # 获取第一个结果
+                    first_result = response.output['results'][0]
+                    # 检查是否有sentences字段
+                    if 'sentences' in first_result:
+                        sentences = first_result['sentences']
+        except Exception as e:
+            logger.error(f"解析响应结果时出错: {str(e)}")
+            return []
+        
+        # 处理句子，生成字幕数据
+        for i, sentence in enumerate(sentences):
+            try:
+                # 获取时间信息（毫秒转秒）
+                # 注意: 异步API可能使用不同的字段名称
+                start_time = sentence.get('begin_time', sentence.get('begin', 0)) / 1000
+                end_time = sentence.get('end_time', sentence.get('end', 0)) / 1000
+                
+                # 如果时间无效，设置默认值
+                if end_time <= start_time:
+                    end_time = start_time + 1
+                
+                # 对较长的句子进行智能分段
+                text = sentence.get('text', '').strip()
+                if not text:
+                    continue
+                
+                # 大于一定长度的句子需要再分割
+                if len(text) > 40:
+                    # 分割句子
+                    segments = self._split_text_by_punctuation(text)
+                    
+                    # 计算每个分段的时间比例
+                    total_duration = end_time - start_time
+                    total_chars = len(text)
+                    
+                    current_time = start_time
+                    for j, segment in enumerate(segments):
+                        if not segment.strip():
+                            continue
+                            
+                        # 按文本长度比例计算时间
+                        segment_duration = (len(segment) / total_chars) * total_duration
+                        # 确保每个分段至少有0.8秒
+                        segment_duration = max(0.8, segment_duration)
+                        segment_end_time = current_time + segment_duration
+                        
+                        # 格式化时间
+                        start_formatted = self._format_time(current_time)
+                        end_formatted = self._format_time(segment_end_time)
+                        
+                        # 创建字幕项
+                        subtitles.append({
+                            "index": len(subtitles),
+                            "start": current_time,
+                            "end": segment_end_time,
+                            "start_formatted": start_formatted,
+                            "end_formatted": end_formatted,
+                            "timestamp": start_formatted,
+                            "duration": segment_duration,
+                            "text": segment.strip()
+                        })
+                        
+                        # 更新开始时间
+                        current_time = segment_end_time
+                else:
+                    # 格式化时间
+                    start_formatted = self._format_time(start_time)
+                    end_formatted = self._format_time(end_time)
+                    
+                    # 创建字幕项
+                    subtitles.append({
+                        "index": i,
+                        "start": start_time,
+                        "end": end_time,
+                        "start_formatted": start_formatted,
+                        "end_formatted": end_formatted,
+                        "timestamp": start_formatted,
+                        "duration": end_time - start_time,
+                        "text": text
+                    })
+            except Exception as e:
+                logger.warning(f"处理句子 {i} 时出错: {str(e)}")
+                continue
+        
+        return subtitles
+            
+    def _split_text_by_punctuation(self, text: str) -> List[str]:
+        """
+        根据标点符号智能分割文本
+        
+        参数:
+            text: 待分割的文本
+            
+        返回:
+            分割后的文本片段列表
+        """
+        # 标点符号列表 (中文和英文)
+        punctuations = ['。', '！', '？', '；', '.', '!', '?', ';']
+        
+        # 第一步：按标点符号分割
+        segments = []
+        last_pos = 0
+        
+        for i, char in enumerate(text):
+            if char in punctuations:
+                segment = text[last_pos:i+1]
+                if segment.strip():
+                    segments.append(segment)
+                last_pos = i + 1
+        
+        # 处理最后一段文本
+        if last_pos < len(text) and text[last_pos:].strip():
+            segments.append(text[last_pos:])
+        
+        # 如果没有找到标点符号，或者分割后的片段过长，进行进一步处理
+        if not segments or any(len(s) > 50 for s in segments):
+            # 第二步：按逗号分割
+            new_segments = []
+            for segment in segments or [text]:
+                if len(segment) > 30:
+                    # 按逗号再分割
+                    comma_segments = []
+                    last_comma_pos = 0
+                    
+                    for i, char in enumerate(segment):
+                        if char in ['，', ',']:
+                            comma_segment = segment[last_comma_pos:i+1]
+                            if comma_segment.strip():
+                                comma_segments.append(comma_segment)
+                            last_comma_pos = i + 1
+                    
+                    # 处理最后一段
+                    if last_comma_pos < len(segment) and segment[last_comma_pos:].strip():
+                        comma_segments.append(segment[last_comma_pos:])
+                    
+                    new_segments.extend(comma_segments if comma_segments else [segment])
+                else:
+                    new_segments.append(segment)
+            
+            segments = new_segments
+        
+        # 如果仍然有过长的片段，进行更小粒度的分割
+        if any(len(s) > 30 for s in segments):
+            final_segments = []
+            for segment in segments:
+                if len(segment) > 30:
+                    # 按固定长度分割
+                    for i in range(0, len(segment), 25):
+                        chunk = segment[i:i+25]
+                        if i + 25 < len(segment):
+                            # 查找最后一个词的边界
+                            j = min(i + 25, len(segment) - 1)
+                            while j > i and segment[j] not in [' ', '，', ',', '。', '.', '！', '!', '？', '?', '；', ';']:
+                                j -= 1
+                            chunk = segment[i:j+1] if j > i else segment[i:i+25]
+                        final_segments.append(chunk)
+                else:
+                    final_segments.append(segment)
+            segments = final_segments
+        
+        return segments
+    
+    def _extract_subtitles_from_video(self, video_file: str, vocabulary_id: str = None) -> List[Dict[str, Any]]:
+        """
+        从视频文件中提取字幕
+        
+        参数:
+            video_file: 视频文件路径
+            vocabulary_id: 热词表ID（可选）
+            
+        返回:
+            字幕列表
+        """
+        logger.info(f"从视频中提取字幕: {video_file}")
+        
+        # 检查缓存
+        cache_key = self._get_cache_key(video_file)
+        if cache_key in self.audio_cache:
+            logger.info(f"使用缓存的字幕: {cache_key}")
+            
+            # 检查缓存的内容是否是字幕数据（列表类型）
+            cached_data = self.audio_cache[cache_key]
+            if isinstance(cached_data, list):
+                return cached_data
+            else:
+                # 如果缓存的不是字幕数据而是文件路径，则清除这个缓存项
+                logger.warning(f"缓存项 {cache_key} 不是字幕数据，将重新处理")
+                del self.audio_cache[cache_key]
+        
+        # 检查文件是否存在
+        if not os.path.exists(video_file):
+            logger.error(f"视频文件不存在: {video_file}")
+            return []
+        
+        # 如果是视频文件，提取音频
+        file_ext = os.path.splitext(video_file)[1].lower()
+        if file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.webm']:
+            audio_file = self.extract_audio(video_file)
+            if not audio_file:
+                logger.error(f"从视频提取音频失败: {video_file}")
+                return []
+        else:
+            # 假设是音频文件
+            audio_file = video_file
+        
+        # 定义API响应包装类
+        class ResponseWrapper:
+            def __init__(self, data):
+                self.status_code = data.get("status_code", 200)
+                self.output = data.get("output", {})
+                self.request_id = data.get("request_id", "unknown")
+                
+                # 添加错误信息
+                if "error" in data:
+                    if self.output is None:
+                        self.output = {"error": data["error"]}
+                    else:
+                        self.output["error"] = data["error"]
+                        
+                # 处理SDK包装器返回的数据
+                if "sentences" in data:
+                    if self.output is None:
+                        self.output = {}
+                    self.output["sentences"] = data["sentences"]
+        
+        # 上传音频文件到可访问的URL
+        audio_file_url = self._upload_to_accessible_url(audio_file)
+        if not audio_file_url:
+            logger.error(f"上传音频文件失败: {audio_file}")
+            
+            # 尝试直接使用文件内容
+            try:
+                if os.path.exists(audio_file) and os.path.getsize(audio_file) < 10 * 1024 * 1024:
+                    with open(audio_file, 'rb') as f:
+                        audio_content = f.read()
+                        logger.info(f"读取音频文件内容，大小: {len(audio_content)} 字节")
+                        
+                        # 使用API进行识别
+                        response_data = dashscope_sdk.call_transcription(
+                            model="paraformer-v2",
+                            file_content=audio_content,
+                            vocabulary_id=vocabulary_id,
+                            sample_rate=16000,
+                            format_type="streaming",
+                            punctuation=True
+                        )
+                        
+                        # 包装响应
+                        response = ResponseWrapper(response_data)
+                        
+                        # 检查响应
+                        if response.output and 'results' in response.output:
+                            subtitles = self._parse_paraformer_response(response)
+                            
+                            # 缓存结果
+                            self.audio_cache[cache_key] = subtitles
+                            self._save_audio_cache()
+                            
+                            return subtitles
+            except Exception as e:
+                logger.error(f"使用文件内容识别失败: {str(e)}")
+                
+            # 尝试转换为标准音频格式
+            try:
+                std_audio_file = self._convert_to_standard_audio(audio_file)
+                if std_audio_file and os.path.exists(std_audio_file):
+                    with open(std_audio_file, 'rb') as f:
+                        std_audio_content = f.read()
+                        
+                        # 使用API进行识别
+                        response_data = dashscope_sdk.call_transcription(
+                            model="paraformer-v2",
+                            file_content=std_audio_content,
+                            vocabulary_id=vocabulary_id,
+                            sample_rate=16000,
+                            format_type="streaming",
+                            punctuation=True
+                        )
+                        
+                        # 包装响应
+                        response = ResponseWrapper(response_data)
+                        
+                        # 检查响应
+                        if response.output and 'results' in response.output:
+                            subtitles = self._parse_paraformer_response(response)
+                            
+                            # 清理临时文件
+                            self._cleanup_temp_files(std_audio_file)
+                            
+                            # 缓存结果
+                            self.audio_cache[cache_key] = subtitles
+                            self._save_audio_cache()
+                            
+                            return subtitles
+            except Exception as e:
+                logger.error(f"使用标准音频格式识别失败: {str(e)}")
+            
+            # 所有方法都失败
+            return []
+        
+        # 尝试使用SDK调用方式
+        try:
+            logger.info("尝试使用SDK调用方式转写音频")
+            # sdk_wrapper = DashScopeSDKWrapper()
+            # result = sdk_wrapper.transcribe_audio(
+            result = dashscope_sdk.transcribe_audio(
+                file_url=audio_file_url,
+                model="paraformer-v2",
+                vocabulary_id=vocabulary_id
+            )
+            
+            # 检查结果
+            if result.get("status") == "success":
+                logger.info("SDK转写音频成功")
+                
+                # 包装结果以匹配现有格式
+                wrapper_response = ResponseWrapper(result)
+                
+                # 解析结果
+                subtitles = self._parse_paraformer_response(wrapper_response)
+                
+                # 缓存结果
+                self.audio_cache[cache_key] = subtitles
+                self._save_audio_cache()
+                
+                return subtitles
+            else:
+                error = result.get("error", "未知错误")
+                logger.error(f"SDK转写音频失败: {error}")
+                
+                # 当SDK调用失败时，回退到HTTP API调用
+                logger.info("尝试回退到HTTP API调用")
+        except Exception as e:
+            logger.exception(f"SDK转写过程中出错: {str(e)}")
+            logger.info("尝试回退到HTTP API调用")
+        
+        # 使用异步方式调用API (原有的HTTP API调用方式保持不变)
+        try:
+            # 1. 提交异步转写任务
+            response_data = dashscope_sdk.call_transcription(
+                model="paraformer-v2",
+                file_urls=[audio_file_url],
+                vocabulary_id=vocabulary_id,
+                sample_rate=16000,
+                format_type="non-streaming",  # 使用非流式模式，即异步模式
+                punctuation=True
+            )
+            
+            # 检查是否请求成功
+            if response_data.get("status_code") != 200:
+                error_code = response_data.get("error", {}).get("code", "UNKNOWN_ERROR")
+                error_message = response_data.get("error", {}).get("message", "未知错误")
+                logger.error(f"提交转写任务失败: {error_code} - {error_message}")
+                return []
+            
+            # 2. 获取任务ID
+            task_id = response_data.get("output", {}).get("task_id")
+            if not task_id:
+                logger.error("未获取到有效的任务ID")
+                return []
+                
+            logger.info(f"转写任务已提交，任务ID: {task_id}")
+            
+            # 3. 轮询任务状态，直到完成或失败
+            max_retry = 60  # 最多轮询60次，约等待10分钟
+            retry_interval = 10  # 每次轮询间隔10秒
+            
+            for i in range(max_retry):
+                # 查询任务状态
+                task_result = dashscope_sdk.get_transcription_result(task_id)
+                
+                if task_result.get("status_code") != 200:
+                    logger.error(f"查询任务状态失败: {task_result.get('error', {})}")
+                    # 继续轮询，可能是临时网络问题
+                    time.sleep(retry_interval)
+                    continue
+                
+                # 获取任务状态
+                task_status = task_result.get("output", {}).get("status", "UNKNOWN")
+                logger.info(f"任务状态: {task_status}，第 {i+1} 次查询")
+                
+                # 根据任务状态处理
+                if task_status == "SUCCEEDED":
+                    # 任务成功完成
+                    logger.info("转写任务已完成")
+                    
+                    # 获取转写结果
+                    result_data = task_result.get("output", {})
+                    
+                    # 包装结果以便复用现有的解析逻辑
+                    wrapper_response = ResponseWrapper({"status_code": 200, "output": result_data})
+                    
+                    # 解析结果
+                    subtitles = self._parse_paraformer_response(wrapper_response)
+                    
+                    # 缓存结果
+                    self.audio_cache[cache_key] = subtitles
+                    self._save_audio_cache()
+                    
+                    return subtitles
+                    
+                elif task_status == "FAILED":
+                    # 任务失败
+                    error_code = task_result.get("output", {}).get("error_code", "UNKNOWN_ERROR")
+                    error_message = task_result.get("output", {}).get("error_message", "未知错误")
+                    logger.error(f"转写任务失败: {error_code} - {error_message}")
+                    return []
+                    
+                elif task_status in ["PENDING", "RUNNING"]:
+                    # 任务仍在进行中，继续等待
+                    time.sleep(retry_interval)
+                    continue
+                    
+                else:
+                    # 未知状态
+                    logger.warning(f"遇到未知任务状态: {task_status}")
+                    time.sleep(retry_interval)
+            
+            # 超过最大轮询次数
+            logger.error(f"转写任务超时，超过最大等待时间: {max_retry * retry_interval}秒")
+            return []
+        
+        except Exception as e:
+            logger.exception(f"转写过程中出错: {str(e)}")
+            return []
+            
+        # 如果执行到这里，说明出现了未处理的情况
+        logger.error("转写过程异常结束")
+        return []
+    
+    def process_video_file(self, video_file: str, vocabulary_id: str = None, format_type: str = "all") -> Dict[str, str]:
+        """
+        处理视频文件，提取字幕并保存为SRT和JSON格式
+        
+        参数:
+            video_file: 视频文件路径
+            vocabulary_id: 热词表ID（可选）
+            format_type: 输出格式类型，可选 "srt", "json", "all" (默认)
+            
+        返回:
+            包含输出文件路径的字典 {"srt": srt_path, "json": json_path}
+        """
+        try:
+            # 提取字幕
+            subtitles = self._extract_subtitles_from_video(video_file, vocabulary_id)
+            if not subtitles:
+                logger.error(f"未能从视频中提取字幕: {video_file}")
+                return {}
+            
+            # 优化字幕
+            optimized_subtitles = self._optimize_subtitles(subtitles)
+            
+            # 准备输出
+            output_dir = os.path.join("data", "processed", "subtitles")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # 生成文件名
+            base_name = os.path.splitext(os.path.basename(video_file))[0]
+            timestamp = int(time.time())
+            result_paths = {}
+            
+            # 保存为SRT文件
+            if format_type in ["srt", "all"]:
+                srt_file = os.path.join(output_dir, f"{base_name}_{timestamp}.srt")
+                self._save_srt_file(optimized_subtitles, srt_file)
+                result_paths["srt"] = srt_file
+                logger.info(f"成功保存字幕到SRT文件: {srt_file}")
+            
+            # 保存为JSON文件
+            if format_type in ["json", "all"]:
+                json_file = os.path.join(output_dir, f"{base_name}_{timestamp}_subtitles.json")
+                self._save_json_file(optimized_subtitles, json_file)
+                result_paths["json"] = json_file
+                logger.info(f"成功保存字幕到JSON文件: {json_file}")
+            
+            return result_paths
+        
+        except Exception as e:
+            logger.exception(f"处理视频文件失败: {str(e)}")
+            return {}
+            
+    def _optimize_subtitles(self, subtitles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        优化字幕，合并过短的字幕，处理重叠时间
+        
+        参数:
+            subtitles: 原始字幕数据
+            
+        返回:
+            优化后的字幕数据
+        """
+        if not subtitles:
+            return []
+            
+        # 按开始时间排序
+        sorted_subtitles = sorted(subtitles, key=lambda x: x.get('start', x.get('begin_time', 0)/1000))
+        
+        # 初始化结果列表
+        optimized = []
+        
+        # 最小字幕持续时间（秒）
+        min_duration = 1.0
+        
+        # 最大字幕长度（字符）
+        max_length = 40
+        
+        current = None
+        
+        for subtitle in sorted_subtitles:
+            # 确保时间格式统一（毫秒 -> 秒）
+            start_time = subtitle.get('start', subtitle.get('begin_time', 0)/1000)
+            end_time = subtitle.get('end', subtitle.get('end_time', 0)/1000)
+            text = subtitle.get('text', '')
+            
+            # 确保结束时间大于开始时间
+            if end_time <= start_time:
+                end_time = start_time + 1.0
+            
+            # 第一条字幕
+            if current is None:
+                current = {
+                    'start': start_time,
+                    'end': end_time,
+                    'text': text,
+                    'timestamp': self._format_time(start_time),
+                    'start_formatted': self._format_time(start_time),
+                    'end_formatted': self._format_time(end_time),
+                    'duration': end_time - start_time
+                }
+                continue
+            
+            # 判断是否需要合并
+            # 1. 当前字幕太短
+            # 2. 合并后的文本不会太长
+            # 3. 时间接近或重叠
+            if (current['duration'] < min_duration or 
+                (current['end'] + 0.5 >= start_time and 
+                 len(current['text'] + text) <= max_length)):
+                # 合并字幕
+                current['text'] = current['text'] + ' ' + text
+                current['end'] = max(current['end'], end_time)
+                current['end_formatted'] = self._format_time(current['end'])
+                current['duration'] = current['end'] - current['start']
+            else:
+                # 添加当前字幕，开始新的字幕
+                optimized.append(current)
+                current = {
+                    'start': start_time,
+                    'end': end_time,
+                    'text': text,
+                    'timestamp': self._format_time(start_time),
+                    'start_formatted': self._format_time(start_time),
+                    'end_formatted': self._format_time(end_time),
+                    'duration': end_time - start_time
+                }
+        
+        # 添加最后一条字幕
+        if current:
+            optimized.append(current)
+        
+        # 重新设置索引
+        for i, subtitle in enumerate(optimized):
+            subtitle['index'] = i
+        
+        logger.info(f"字幕优化：从 {len(subtitles)} 条优化为 {len(optimized)} 条")
+        return optimized
+        
+    def _save_srt_file(self, subtitles: List[Dict[str, Any]], srt_file: str) -> None:
+        """
+        保存字幕为SRT格式
+        
+        参数:
+            subtitles: 字幕数据
+            srt_file: 输出SRT文件路径
+        """
+        with open(srt_file, 'w', encoding='utf-8') as f:
+            for i, subtitle in enumerate(subtitles):
+                # SRT索引从1开始
+                index = i + 1
+                
+                # 获取时间信息
+                start_time = subtitle.get('start', 0)
+                end_time = subtitle.get('end', 0)
+                
+                # 转换为SRT时间格式 (00:00:00,000)
+                start_formatted = self._format_time_srt(start_time)
+                end_formatted = self._format_time_srt(end_time)
+                
+                # 获取文本
+                text = subtitle.get('text', '')
+                
+                # 写入SRT格式
+                f.write(f"{index}\n")
+                f.write(f"{start_formatted} --> {end_formatted}\n")
+                f.write(f"{text}\n\n")
+            
+    def _save_json_file(self, subtitles: List[Dict[str, Any]], json_file: str) -> None:
+        """
+        保存字幕为JSON格式
+        
+        参数:
+            subtitles: 字幕数据
+            json_file: 输出JSON文件路径
+        """
+        # 只保留必要的字段，以保持与现有格式一致
+        export_data = []
+        for subtitle in subtitles:
+            export_data.append({
+                "timestamp": subtitle.get('timestamp', '00:00:00'),
+                "text": subtitle.get('text', ''),
+                "start_time": subtitle.get('start', 0),
+                "end_time": subtitle.get('end', 0)
+            })
+            
+        # 写入JSON文件
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+    def clear_cache(self, video_file: str = None):
+        """
+        清除音频处理缓存
+        
+        参数:
+            video_file: 指定视频文件的缓存，如果为None则清除所有缓存
+        """
+        if video_file:
+            # 清除指定视频文件的缓存
+            cache_key = self._get_cache_key(video_file)
+            if cache_key in self.audio_cache:
+                del self.audio_cache[cache_key]
+                logger.info(f"已清除视频 {video_file} 的缓存")
+        else:
+            # 清除所有缓存
+            self.audio_cache = {}
+            logger.info("已清除所有缓存")
+        
+        # 保存缓存
+        self._save_audio_cache()

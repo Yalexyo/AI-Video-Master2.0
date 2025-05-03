@@ -236,8 +236,14 @@ class HotWordsAPI:
                 }
             }
             
-            # 添加超时，避免长时间等待
-            response = requests.post(self.base_url, headers=headers, json=data, timeout=10)
+            logger.info(f"正在验证API密钥: {self.api_key[:4]}...{self.api_key[-4:]} (开始时间: {datetime.now().strftime('%H:%M:%S')})")
+            
+            # 增加超时时间，避免短时连接超时
+            start_time = time.time()
+            response = requests.post(self.base_url, headers=headers, json=data, timeout=30)
+            end_time = time.time()
+            
+            logger.info(f"API验证请求耗时: {end_time - start_time:.2f}秒")
             
             # 检查响应
             if response.status_code == 200:
@@ -257,13 +263,13 @@ class HotWordsAPI:
                     logger.error(f"API调用失败，状态码: {response.status_code}, 响应: {response.text[:200]}")
                 return False
         except requests.exceptions.Timeout:
-            logger.error("API连接超时，请检查网络连接或稍后再试")
+            logger.error(f"API请求超时，网络连接问题。请检查网络连接和防火墙设置。")
             return False
         except requests.exceptions.ConnectionError:
-            logger.error("无法连接到API服务器，请检查网络连接")
+            logger.error(f"API连接错误，无法连接到阿里云服务器。请检查网络连接。")
             return False
         except Exception as e:
-            logger.error(f"API连接测试出错: {str(e)}")
+            logger.error(f"验证API密钥时发生未知错误: {str(e)}")
             return False
     
     def create_vocabulary(self, vocabulary, prefix=None, target_model=None, name=None):
