@@ -86,6 +86,10 @@ class LLMService:
             logger.error("DeepSeek API Key未配置")
             return None
             
+        # 确保prompt中包含"json"一词，以符合response_format=json_object的要求
+        if "json" not in prompt.lower():
+            prompt += "\n请以JSON格式返回结果。"
+            
         headers = {
             "Authorization": f"Bearer {self.deepseek_api_key}",
             "Content-Type": "application/json"

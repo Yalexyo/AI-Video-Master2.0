@@ -10,6 +10,12 @@ AI 视频大师是一款基于人工智能的视频分析与处理工具，可�
 - **维度分析**: 根据预设维度对视频内容进行多角度分析
 - **意图识别**: 智能识别视频内容中的关键意图
 
+### 魔法视频
+- **视频语义分段**: 自动对Demo视频进行语义分析和分段
+- **跨视频匹配**: 基于语义相似度在多个视频中查找匹配片段
+- **智能视频合成**: 将匹配片段智能剪辑拼接为新视频
+- **音频控制**: 支持使用原片段音频或Demo视频音频
+
 ### 热词管理
 - **热词提取**: 从视频内容中自动识别关键词与热词
 - **热词权重调整**: 支持对热词重要性进行手动调整
@@ -24,9 +30,9 @@ AI 视频大师是一款基于人工智能的视频分析与处理工具，可�
 
 - **前端**: Streamlit
 - **后端**: Python
-- **AI模型**: Sentence Transformers, OpenAI API
+- **AI模型**: Sentence Transformers, OpenAI API, 深度语义匹配
 - **存储**: 阿里云OSS
-- **音视频处理**: ffmpeg
+- **音视频处理**: ffmpeg, MoviePy
 
 ## 安装与配置
 
@@ -68,6 +74,11 @@ python scripts/download_models.py
 streamlit run app.py
 ```
 
+或启动魔法视频功能：
+```bash
+./scripts/run_magic_video.sh
+```
+
 ## 项目结构
 
 ```
@@ -77,6 +88,7 @@ AI-Video-Master3.0/
 ├── pages/                    # 页面目录
 │   ├── hotwords.py           # 热词管理页面
 │   ├── video_search.py       # 视频搜索页面
+│   ├── magic_video.py        # 魔法视频页面
 │   └── legacy/               # 历史页面
 │
 ├── src/                      # 核心源码
@@ -90,6 +102,7 @@ AI-Video-Master3.0/
 │   ├── core/                 # 核心业务逻辑
 │   │   ├── hot_words_service.py  # 热词服务
 │   │   ├── intent_service.py # 意图识别服务
+│   │   ├── magic_video_service.py # 魔法视频服务
 │   │   ├── model.py          # 数据模型
 │   │   └── video_segment_service.py  # 视频片段处理服务
 │   │
@@ -111,14 +124,22 @@ AI-Video-Master3.0/
 │   ├── download_models.py    # 模型下载
 │   ├── oss_config.sh         # OSS配置脚本
 │   ├── run.sh                # 运行脚本
+│   ├── run_magic_video.sh    # 魔法视频启动脚本
 │   └── track_pending.py      # 待处理任务跟踪
 │
 ├── data/                     # 数据目录
 │   ├── cache/                # 缓存数据
 │   ├── intents/              # 意图数据
+│   ├── processed/            # 处理过程数据
+│   │   ├── analysis/         # 分析结果
+│   │   └── subtitles/        # 提取的字幕
 │   ├── output/               # 输出结果
 │   │   ├── segments/         # 视频片段
+│   │   ├── videos/           # 合成视频
 │   │   └── subtitles/        # 字幕文件
+│   ├── temp/                 # 临时文件
+│   │   ├── audio/            # 临时音频
+│   │   └── videos/           # 临时视频
 │   ├── test_samples/         # 测试样本
 │   └── uploads/              # 上传文件
 │

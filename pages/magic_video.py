@@ -1,332 +1,352 @@
-import streamlit as st
+#!/usr/bin/env python3
+"""
+魔法视频页面 - 视频自动合成
+
+该页面提供视频分析和魔法视频合成功能
+"""
+
 import os
 import sys
-import logging
-import pandas as pd
 import json
+import logging
 import asyncio
-from typing import List, Dict, Any, Optional, Tuple
+import time
+import streamlit as st
+from pathlib import Path
+import pandas as pd
+import shutil
 from datetime import datetime
-import uuid
 
-# 添加项目根目录到系统路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from src.ui_elements.simple_nav import create_sidebar_navigation
+# 导入项目组件
 from utils.processor import VideoProcessor
-from src.core.hot_words_service import HotWordsService
 from src.core.magic_video_service import MagicVideoService
+from src.core.magic_video_fix import video_fix_tools
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO,
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 配置页面
+# Streamlit页面配置
 st.set_page_config(
-    page_title="魔法视频",
-    page_icon="🪄",
+    page_title="魔法视频 - AI视频大师",
+    page_icon="🧙‍♂️",
     layout="wide"
 )
 
-async def main():
-    """魔法视频页面主函数"""
-    # 添加侧边栏导航
-    create_sidebar_navigation(active_page="🪄魔法视频")
+# 样式
+st.markdown("""
+<style>
+    .stButton button {
+        width: 100%;
+    }
+    .diagnostic-btn {
+        font-size: 0.8em;
+        color: #888;
+    }
+    .video-validated {
+        color: green;
+        font-weight: bold;
+    }
+    .video-invalid {
+        color: red;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+def validate_video_files(video_files):
+    """验证上传的视频文件是否有效"""
+    invalid_files = []
     
-    st.title("🪄 魔法视频")
-    st.write("基于AI智能分析，将多个视频语义匹配并合成新视频")
-    
-    # 初始化服务
-    processor = VideoProcessor()
-    hot_words_service = HotWordsService()
-    magic_video_service = MagicVideoService()
-    
-    # 获取当前热词ID
-    current_hotword_id = hot_words_service.get_current_hotword_id()
-    
-    # 步骤1：选择Demo视频
-    with st.expander("第一步：选择Demo视频", expanded=True):
-        # 默认视频目录
-        default_video_dir = os.path.join('data', 'input')
-        video_files = [f for f in os.listdir(default_video_dir) if f.endswith(('.mp4', '.mov', '.avi', '.MOV'))]
+    for video_file in video_files:
+        temp_path = os.path.join("data", "temp", "videos", video_file.name)
+        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
         
-        if not video_files:
-            st.warning("⚠️ 未找到可用的视频文件，请将视频文件放入data/input目录")
-            return
+        with open(temp_path, "wb") as f:
+            f.write(video_file.getbuffer())
         
-        demo_video = st.selectbox(
-            "选择Demo视频",
-            options=video_files,
-            format_func=lambda x: f"{x} - {os.path.getsize(os.path.join(default_video_dir, x)) // (1024*1024)}MB"
-        )
+        # 验证视频
+        valid, error_msg = video_fix_tools.validate_video_file(temp_path)
+        if not valid:
+            invalid_files.append((video_file.name, error_msg))
+            # 尝试修复
+            st.warning(f"视频 {video_file.name} 存在问题，正在尝试修复...")
+            fixed, result = video_fix_tools.repair_video_file(temp_path)
+            if fixed:
+                st.success(f"视频 {video_file.name} 已成功修复!")
+            else:
+                st.error(f"无法修复视频 {video_file.name}: {result}")
+                # 删除无效视频文件
+                os.remove(temp_path)
+                continue
+        
+        # 复制到目标目录
+        target_dir = os.path.join("data", "test_samples", "input", "video")
+        os.makedirs(target_dir, exist_ok=True)
+        target_path = os.path.join(target_dir, video_file.name)
+        shutil.copy2(temp_path, target_path)
+    
+    return invalid_files
+
+def main():
+    """主函数"""
+    st.title("🧙‍♂️ 魔法视频")
+    st.markdown("上传参考视频和素材视频，自动生成场景完整的魔法视频")
+    
+    # 初始化会话状态
+    if "demo_video_path" not in st.session_state:
+        st.session_state.demo_video_path = None
+    if "demo_segments" not in st.session_state:
+        st.session_state.demo_segments = None
+    if "candidate_videos" not in st.session_state:
+        st.session_state.candidate_videos = []
+    if "match_results" not in st.session_state:
+        st.session_state.match_results = None
+    if "magic_video_path" not in st.session_state:
+        st.session_state.magic_video_path = None
+    
+    # 创建服务实例
+    service = MagicVideoService()
+    
+    # 分栏布局
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("第1步：上传参考视频")
+        demo_video = st.file_uploader("上传参考视频", type=["mp4", "mov", "avi"], key="demo_video")
         
         if demo_video:
-            demo_video_path = os.path.join(default_video_dir, demo_video)
-            st.success(f"已选择Demo视频：{demo_video}")
+            # 保存上传的Demo视频
+            demo_dir = os.path.join("data", "test_samples", "input", "video")
+            os.makedirs(demo_dir, exist_ok=True)
+            
+            demo_path = os.path.join(demo_dir, demo_video.name)
+            with open(demo_path, "wb") as f:
+                f.write(demo_video.getbuffer())
+            
+            # 检查视频是否有效
+            valid, error_msg = video_fix_tools.validate_video_file(demo_path)
+            if not valid:
+                st.error(f"参考视频无效：{error_msg}")
+                st.warning("正在尝试修复视频...")
+                fixed, result = video_fix_tools.repair_video_file(demo_path)
+                if fixed:
+                    st.success("参考视频已修复!")
+                else:
+                    st.error(f"无法修复参考视频: {result}")
+                return
+            else:
+                st.success("参考视频有效")
+            
+            st.session_state.demo_video_path = demo_path
             
             # 显示视频预览
-            st.video(demo_video_path)
-    
-    # 步骤2：选择视频源
-    with st.expander("第二步：选择视频源", expanded=True):
-        video_source = st.radio(
-            "请选择视频源",
-            options=["本地视频库", "在线视频URL列表"],
-            horizontal=True,
-            help="本地视频库: 使用data/test_samples/input/video目录下的视频；在线视频URL列表: 使用data/input目录下的CSV文件中的视频URL列表"
-        )
-        
-        candidate_video_paths = []
-        
-        if video_source == "本地视频库":
-            # 获取本地视频库目录下的视频文件
-            local_video_dir = os.path.join('data', 'test_samples', 'input', 'video')
-            local_video_files = [f for f in os.listdir(local_video_dir) if f.endswith(('.mp4', '.mov', '.avi', '.MOV'))]
+            st.video(demo_path)
             
-            if not local_video_files:
-                st.warning("⚠️ 本地视频库中未找到可用的视频文件")
-                return
+            # 热词表选择（如果需要）
+            use_hotwords = st.checkbox("使用热词表", value=False)
+            vocabulary_id = None
+            if use_hotwords:
+                # 这里可以添加热词表选择逻辑
+                st.info("热词表功能待实现")
             
-            st.success(f"本地视频库中共有 {len(local_video_files)} 个视频文件")
-            
-            # 显示视频列表
-            with st.expander("查看可用的本地视频", expanded=False):
-                for i, file in enumerate(local_video_files, 1):
-                    file_path = os.path.join(local_video_dir, file)
-                    file_size = os.path.getsize(file_path) // (1024*1024)
-                    st.text(f"{i}. {file} - {file_size}MB")
-            
-            # 设置候选视频路径列表
-            candidate_video_paths = [os.path.join(local_video_dir, file) for file in local_video_files]
-        
-        else:  # 在线视频URL列表
-            # 获取CSV文件列表
-            csv_dir = os.path.join('data', 'input')
-            csv_files = [f for f in os.listdir(csv_dir) if f.endswith('.csv')]
-            
-            if not csv_files:
-                st.warning("⚠️ 未找到可用的CSV文件，请将CSV文件放入data/input目录")
-                return
-            
-            url_csv_file = st.selectbox(
-                "选择视频URL列表文件",
-                options=csv_files
-            )
-            
-            video_urls = []
-            
-            if url_csv_file:
-                # 加载CSV文件
-                csv_path = os.path.join(csv_dir, url_csv_file)
-                try:
-                    df = pd.read_csv(csv_path)
-                    url_col = None
+            # 分析参考视频按钮
+            if st.button("📊 分析参考视频", key="analyze_demo"):
+                with st.spinner("正在分析参考视频..."):
+                    # 执行异步分析
+                    result = asyncio.run(service.process_demo_video(demo_path, vocabulary_id))
                     
-                    # 尝试自动识别URL列
-                    for col in df.columns:
-                        if 'url' in col.lower():
-                            url_col = col
-                            break
-                    
-                    if url_col is None and len(df.columns) > 0:
-                        url_col = df.columns[0]  # 使用第一列作为URL列
-                    
-                    if url_col:
-                        video_urls = df[url_col].tolist()
-                        st.success(f"已从CSV文件中读取 {len(video_urls)} 个视频URL")
-                        
-                        # 显示URL列表
-                        with st.expander("查看视频URL列表", expanded=False):
-                            for i, url in enumerate(video_urls, 1):
-                                st.text(f"{i}. {url}")
+                    if "error" in result and result["error"]:
+                        st.error(f"分析参考视频失败: {result['error']}")
                     else:
-                        st.error("无法识别CSV文件中的URL列")
-                except Exception as e:
-                    st.error(f"读取CSV文件出错: {str(e)}")
+                        st.success(f"分析完成，共识别 {len(result['stages'])} 个语义段落")
+                        st.session_state.demo_segments = result["stages"]
+        
+        st.subheader("第2步：上传素材视频")
             
-            # 在实际处理流程中，需要下载这些URL对应的视频
-            # 在此示例中，暂不实现此功能，仅显示读取的URL
-            if video_urls:
-                st.info("注意：当前版本暂不支持直接从URL下载视频，请先将视频下载到本地视频库")
+        # 多个素材视频上传
+        candidate_videos = st.file_uploader("上传素材视频（可多选）", 
+                                         type=["mp4", "mov", "avi"],
+                                         accept_multiple_files=True,
+                                         key="candidate_videos")
+        
+        if candidate_videos:
+            # 验证上传的视频文件
+            invalid_files = validate_video_files(candidate_videos)
+            
+            if invalid_files:
+                st.warning("以下视频存在问题，但已尝试修复：")
+                for name, error in invalid_files:
+                    st.write(f"- {name}: {error}")
+            
+            # 更新会话状态
+            valid_videos = [os.path.join("data", "test_samples", "input", "video", v.name) 
+                          for v in candidate_videos 
+                          if os.path.exists(os.path.join("data", "test_samples", "input", "video", v.name))]
+            
+            st.session_state.candidate_videos = valid_videos
+            
+            st.success(f"已上传 {len(valid_videos)} 个有效素材视频")
+                        
+            # 素材视频处理按钮
+            if st.button("🔍 分析素材视频", key="analyze_candidates"):
+                if len(st.session_state.candidate_videos) == 0:
+                    st.error("请先上传有效的素材视频")
+                else:
+                    with st.spinner("正在分析素材视频..."):
+                        # 使用异步方法处理
+                        subtitles = asyncio.run(service.process_candidate_videos(st.session_state.candidate_videos))
+                        
+                        if subtitles:
+                            st.success(f"已完成 {len(subtitles)} 个素材视频的分析")
+                    else:
+                            st.error("素材视频分析失败")
+        
+        st.subheader("第3步：设置与合成")
+        
+        # 魔法视频设置
+        output_filename = st.text_input("输出文件名", value=f"magic_video_{datetime.now().strftime('%Y%m%d')}")
+        use_demo_audio = st.checkbox("使用参考视频的音频", value=True)
     
-    # 步骤3：视频分析与合成设置
-    with st.expander("第三步：分析与合成设置", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            max_concurrent = st.slider(
-                "最大并行任务数",
-                min_value=1,
-                max_value=10,
-                value=3,
-                help="设置分析时的最大并行任务数，数值越大处理速度越快，但会消耗更多资源"
-            )
-        
-        with col2:
-            similarity_threshold = st.slider(
-                "最低相似度阈值",
-                min_value=0,
-                max_value=100,
-                value=60,
-                help="设置语义匹配的最低相似度阈值，低于此分数的匹配结果将被过滤"
-            )
-        
-        st.markdown("---")
-        
-        # 输出设置
-        output_filename = st.text_input(
-            "输出文件名",
-            value=f"magic_video_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            help="设置生成的魔法视频文件名（不含扩展名）"
-        )
-        
-        # 添加音频设置
-        audio_source = st.radio(
-            "音频来源",
-            options=["使用原片段音频", "使用Demo视频音频"],
-            horizontal=True,
-            help="选择生成视频的音频来源"
-        )
-    
-    # 步骤4：执行分析和合成
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        process_button = st.button("🪄 开始魔法合成", type="primary", use_container_width=True)
+        # 魔法视频合成按钮
+        if st.button("✨ 合成魔法视频", key="compose_magic"):
+            if not st.session_state.demo_segments:
+                st.error("请先分析参考视频")
+            elif len(st.session_state.candidate_videos) == 0:
+                st.error("请先上传并分析素材视频")
+            else:
+                with st.spinner("正在匹配视频片段..."):
+                    # 首先获取所有素材视频的字幕
+                    subtitles = asyncio.run(service.process_candidate_videos(st.session_state.candidate_videos))
+                    
+                    if not subtitles:
+                        st.error("素材视频分析失败")
+                    else:
+                        # 匹配视频片段
+                        match_results = asyncio.run(service.match_video_segments(
+                            st.session_state.demo_segments,
+                            subtitles,
+                            similarity_threshold=60
+                        ))
+                        
+                        st.session_state.match_results = match_results
+                        
+                        if not match_results:
+                            st.error("视频片段匹配失败，未找到足够相似的片段")
+                        else:
+                            # 合成魔法视频
+                            with st.spinner("正在合成魔法视频..."):
+                                magic_video = asyncio.run(service.compose_magic_video(
+                                    st.session_state.demo_video_path,
+                                    match_results,
+                                    output_filename,
+                                    use_demo_audio
+                                ))
+                                
+                                if magic_video and os.path.exists(magic_video):
+                                    st.session_state.magic_video_path = magic_video
+                                    st.success(f"魔法视频合成成功: {magic_video}")
+                                else:
+                                    st.error("魔法视频合成失败")
     
     with col2:
-        cancel_button = st.button("❌ 取消", type="secondary", use_container_width=True)
+        # 诊断工具（折叠面板）
+        with st.expander("🔧 诊断工具", expanded=False):
+            st.subheader("视频文件检测")
     
-    # 处理请求
-    if process_button and demo_video and candidate_video_paths:
-        with st.spinner("正在执行魔法视频合成，请稍候..."):
-            try:
-                # 创建进度条
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+            # 诊断按钮
+            if st.button("👁️ 检查视频文件", key="check_videos"):
+                st.write("#### 检查参考视频:")
+                if st.session_state.demo_video_path and os.path.exists(st.session_state.demo_video_path):
+                    valid, error = video_fix_tools.validate_video_file(st.session_state.demo_video_path)
+                    if valid:
+                        st.markdown(f"- **参考视频**: <span class='video-validated'>✅ 有效</span>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"- **参考视频**: <span class='video-invalid'>❌ 无效</span> - {error}", unsafe_allow_html=True)
+                else:
+                    st.write("- 未找到参考视频")
                 
-                # 步骤1：提取字幕并进行语义分段
-                status_text.info("步骤1/4：提取Demo视频字幕并进行语义分段")
-                demo_result = await magic_video_service.process_demo_video(
-                    video_path=demo_video_path,
-                    vocabulary_id=current_hotword_id
-                )
+                st.write("#### 检查素材视频:")
+                if st.session_state.candidate_videos:
+                    for i, video_path in enumerate(st.session_state.candidate_videos):
+                        if os.path.exists(video_path):
+                            valid, error = video_fix_tools.validate_video_file(video_path)
+                            if valid:
+                                st.markdown(f"- **素材 {i+1}**: <span class='video-validated'>✅ 有效</span> - {os.path.basename(video_path)}", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"- **素材 {i+1}**: <span class='video-invalid'>❌ 无效</span> - {os.path.basename(video_path)} - {error}", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"- **素材 {i+1}**: <span class='video-invalid'>❌ 不存在</span> - {os.path.basename(video_path)}", unsafe_allow_html=True)
+                else:
+                    st.write("- 未找到素材视频")
                 
-                if "error" in demo_result and demo_result["error"]:
-                    st.error(f"处理Demo视频时出错: {demo_result['error']}")
-                    return
+            # 尝试修复按钮
+            if st.button("🔄 尝试修复所有视频", key="fix_videos"):
+                st.write("#### 修复参考视频:")
+                if st.session_state.demo_video_path and os.path.exists(st.session_state.demo_video_path):
+                    fixed, result = video_fix_tools.repair_video_file(st.session_state.demo_video_path)
+                    if fixed:
+                        st.success(f"参考视频修复成功: {os.path.basename(st.session_state.demo_video_path)}")
+                    else:
+                        st.error(f"参考视频修复失败: {result}")
                 
-                demo_segments = demo_result.get("stages", [])
-                if not demo_segments:
-                    st.error("未能从Demo视频中提取到有效的语义段落")
-                    return
+                st.write("#### 修复素材视频:")
+                if st.session_state.candidate_videos:
+                    for i, video_path in enumerate(st.session_state.candidate_videos):
+                        if os.path.exists(video_path):
+                            fixed, result = video_fix_tools.repair_video_file(video_path)
+                            if fixed:
+                                st.success(f"素材 {i+1} 修复成功: {os.path.basename(video_path)}")
+                            else:
+                                st.error(f"素材 {i+1} 修复失败: {result}")
+                        else:
+                            st.error(f"素材 {i+1} 不存在: {os.path.basename(video_path)}")
+        
+        # 结果展示
+        st.subheader("结果展示")
+        
+        # 根据会话状态显示不同内容
+        if st.session_state.magic_video_path:
+            st.success("魔法视频已生成")
+            st.video(st.session_state.magic_video_path)
+        elif st.session_state.match_results:
+            st.info("视频片段匹配完成，等待合成")
+            # 显示匹配结果
+            st.write("#### 匹配片段:")
+            for stage_id, matches in st.session_state.match_results.items():
+                st.write(f"**阶段 {stage_id}:** {len(matches)} 个匹配")
+                if matches:
+                    best_match = matches[0]
+                    st.write(f"- 最佳匹配: {os.path.basename(best_match['video_id'])}, "
+                           f"相似度: {best_match['similarity']:.2f}%, "
+                           f"时间: {best_match['start_time']:.2f}s - {best_match['end_time']:.2f}s")
+        elif st.session_state.demo_segments:
+            st.info("参考视频分析完成，等待素材视频处理")
+            # 显示分段结果
+            st.write("#### 参考视频段落:")
+            for segment in st.session_state.demo_segments:
+                st.write(f"**{segment['index']}. {segment['label']}** ({segment['start_time']:.2f}s - {segment['end_time']:.2f}s)")
+                st.write(f"内容: {segment['text'][:100]}...")
+                else:
+            st.info("请完成左侧步骤以生成魔法视频")
+            
+            # 示例或帮助信息
+            with st.expander("查看使用指南", expanded=True):
+                st.markdown("""
+                **魔法视频生成步骤:**
                 
-                # 显示分段结果
-                st.success(f"Demo视频语义分段完成，共识别 {len(demo_segments)} 个语义段落")
+                1. **上传参考视频** - 上传一个包含完整场景流程的视频作为参考
+                2. **分析参考视频** - 系统将分析视频内容并识别关键场景
+                3. **上传素材视频** - 上传包含各种场景的素材视频文件
+                4. **分析素材视频** - 系统将分析所有素材视频
+                5. **合成魔法视频** - 根据参考视频的场景结构，从素材中匹配最佳片段并合成
                 
-                with st.expander("查看语义分段结果", expanded=False):
-                    for segment in demo_segments:
-                        st.markdown(f"**阶段 {segment['stage']}: {segment['label']}**")
-                        st.markdown(f"* 时间段: {segment['start_timestamp']} - {segment['end_timestamp']}")
-                        st.markdown(f"* 关键词: {', '.join(segment['keywords']) if segment['keywords'] else '无'}")
-                        st.markdown(f"* 内容: {segment['text'][:150]}...")
-                        st.markdown("---")
-                
-                progress_bar.progress(25)
-                
-                # 步骤2：处理候选视频
-                status_text.info("步骤2/4：处理候选视频")
-                
-                # 设置最大处理视频数量(避免处理太多视频)
-                max_videos = 10
-                if len(candidate_video_paths) > max_videos:
-                    st.warning(f"候选视频数量过多，将只处理前 {max_videos} 个视频")
-                    candidate_video_paths = candidate_video_paths[:max_videos]
-                
-                # 批量处理候选视频
-                candidate_subtitles = await magic_video_service.process_candidate_videos(
-                    video_paths=candidate_video_paths,
-                    vocabulary_id=current_hotword_id
-                )
-                
-                if not candidate_subtitles:
-                    st.error("未能处理任何候选视频，请检查视频文件")
-                    return
-                
-                st.success(f"候选视频处理完成，成功处理 {len(candidate_subtitles)} 个视频")
-                progress_bar.progress(50)
-                
-                # 步骤3：执行语义匹配
-                status_text.info("步骤3/4：执行语义匹配")
-                
-                # 为每个Demo段落找到最匹配的候选视频片段
-                match_results = await magic_video_service.match_video_segments(
-                    demo_segments=demo_segments,
-                    candidate_subtitles=candidate_subtitles,
-                    similarity_threshold=similarity_threshold
-                )
-                
-                if not match_results:
-                    st.error("语义匹配未找到有效的匹配结果")
-                    return
-                
-                # 汇总匹配结果
-                total_matches = sum(len(matches) for matches in match_results.values())
-                st.success(f"语义匹配完成，共找到 {total_matches} 个匹配片段")
-                
-                # 显示匹配结果
-                with st.expander("查看匹配结果", expanded=False):
-                    for stage_id, matches in match_results.items():
-                        if not matches:
-                            st.warning(f"阶段 {stage_id} 未找到匹配片段")
-                            continue
-                        
-                        st.markdown(f"**阶段 {stage_id} 的匹配结果:**")
-                        for i, match in enumerate(matches, 1):
-                            st.markdown(f"- 匹配 {i}: 视频 {match['video_id']} ({match['similarity']}% 相似度)")
-                            st.markdown(f"  时间段: {match['start_timestamp']} - {match['end_timestamp']}")
-                            st.markdown(f"  文本: {match['text'][:100]}...")
-                
-                progress_bar.progress(75)
-                
-                # 步骤4：合成魔法视频
-                status_text.info("步骤4/4：合成魔法视频")
-                
-                use_demo_audio = (audio_source == "使用Demo视频音频")
-                output_path = await magic_video_service.compose_magic_video(
-                    demo_video_path=demo_video_path,
-                    match_results=match_results,
-                    output_filename=output_filename,
-                    use_demo_audio=use_demo_audio
-                )
-                
-                if not output_path or not os.path.exists(output_path):
-                    st.error("合成魔法视频失败")
-                    return
-                
-                progress_bar.progress(100)
-                status_text.success("✅ 魔法视频合成完成！")
-                
-                # 显示结果
-                st.markdown("### 生成的魔法视频")
-                st.video(output_path)
-                
-                # 提供下载链接
-                with open(output_path, "rb") as file:
-                    st.download_button(
-                        label="下载魔法视频",
-                        data=file,
-                        file_name=f"{output_filename}.mp4",
-                        mime="video/mp4"
-                    )
-                
-            except Exception as e:
-                logger.exception(f"魔法视频处理过程出错: {str(e)}")
-                st.error(f"处理过程出现错误: {str(e)}")
-    
-    # 显示页脚
-    st.markdown("---")
-    st.caption("AI视频魔法合成系统 - 版权所有")
+                **提示:**
+                - 参考视频应当包含清晰的场景过渡
+                - 素材视频越多，匹配质量越高
+                - 如遇到视频处理问题，可使用诊断工具检测和修复
+                """)
 
-# 运行主函数
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 

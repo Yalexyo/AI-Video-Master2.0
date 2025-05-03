@@ -6,8 +6,13 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import json
 
-# 设置离线模式，避免模型下载失败
+# 设置所有离线模式环境变量，彻底阻止任何外部连接
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
+os.environ['HF_HUB_OFFLINE'] = '1'
+os.environ['HF_DATASETS_OFFLINE'] = '1'
+os.environ['DISABLE_TELEMETRY'] = '1'
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
+os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
 
 from sentence_transformers import SentenceTransformer, util
 import re
